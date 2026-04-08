@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Ship,
@@ -266,9 +266,9 @@ export default function TrackingPage() {
       });
   };
 
-  useState(() => {
+  useEffect(() => {
     fetchTrackedShipments();
-  });
+  }, []);
 
   const handleRefresh = async (shipment: Shipment) => {
     setRefreshingId(shipment.id);
