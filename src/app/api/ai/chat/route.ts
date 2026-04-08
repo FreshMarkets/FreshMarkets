@@ -98,7 +98,7 @@ export async function POST(request: Request) {
     }
 
     const result: AIChatResponse = {
-      conversation_id: conversationId,
+      conversation_id: conversationId!,
       message: savedMsg,
       actions: actions.length > 0 ? actions : undefined,
     };
