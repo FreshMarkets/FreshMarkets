@@ -1,6 +1,31 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { fetchContainerTracking } from '@/lib/safecube';
 
+function strVal(val: unknown): string | null {
+  if (!val) return null;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && val !== null && 'name' in val) {
+    const n = (val as Record<string, unknown>).name;
+    return typeof n === 'string' ? n : null;
+  }
+  return null;
+}
+
+function normalizeEvent(ev: Record<string, unknown>) {
+  const loc = ev.location as Record<string, unknown> | null;
+  return {
+    ...ev,
+    location: loc
+      ? {
+          name: strVal(loc.name) ?? strVal(loc) ?? null,
+          country: typeof loc.country === 'string' ? loc.country : (loc.countryCode as string) ?? null,
+          locode: (loc.locode as string) ?? null,
+        }
+      : null,
+    facility: typeof ev.facility === 'string' ? ev.facility : strVal(ev.facility),
+  };
+}
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -40,8 +65,8 @@ export async function POST(
       tracking.route?.pod?.predictiveEta ??
       tracking.route?.pod?.estimatedDate ??
       null;
-    const trackingEvents =
-      tracking.containers?.flatMap((c) => c.events ?? []) ?? [];
+    const rawEvents = tracking.containers?.flatMap((c) => c.events ?? []) ?? [];
+    const trackingEvents = rawEvents.map((ev) => normalizeEvent(ev as unknown as Record<string, unknown>));
 
     // Persist to DB
     const { error: updateError } = await supabase
