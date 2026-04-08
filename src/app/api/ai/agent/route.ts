@@ -80,7 +80,7 @@ export async function POST(request: Request) {
 
       const responseBody: AgentNeedsApprovalResponse = {
         status: 'needs_approval',
-        conversation_id: conversationId,
+        conversation_id: conversationId!,
         session_id: session.id,
         preview,
         steps: result.steps,
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
 
     const responseBody: AgentCompleteResponse = {
       status: 'complete',
-      conversation_id: conversationId,
+      conversation_id: conversationId!,
       steps: result.steps,
       message: finalText,
     };
