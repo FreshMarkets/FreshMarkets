@@ -448,7 +448,7 @@ async function buildPreviewPayload(
       .select('id, name, city, country')
       .in('id', ids);
 
-    const byId = Object.fromEntries((contacts ?? []).map((c: Contact) => [c.id, c]));
+    const byId = Object.fromEntries((contacts ?? []).map((c) => [c.id, c]));
     const name = (id?: string) => {
       if (!id) return 'N/A';
       const c = byId[id];
