@@ -47,7 +47,8 @@ export default async function ReportsPage() {
   // Carrier performance: group by carrier
   const carrierMap = new Map<string, { name: string; shipments: number; cost: number }>();
   for (const row of carrierRows ?? []) {
-    const name = (row.carrier as { name: string } | null)?.name ?? 'Unknown';
+    const carrier = row.carrier as unknown as { name: string } | null;
+    const name = carrier?.name ?? 'Unknown';
     const existing = carrierMap.get(row.carrier_id) ?? { name, shipments: 0, cost: 0 };
     existing.shipments += 1;
     existing.cost += Number(row.value_usd) || 0;
