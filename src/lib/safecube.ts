@@ -81,7 +81,7 @@ export async function fetchContainerTracking(
 
   const res = await fetch(`${BASE_URL}/shipment?${params}`, {
     headers: {
-      'x-api-key': apiKey,
+      'API_KEY': apiKey,
       'Accept': 'application/json',
     },
     // Don't cache — always return live tracking data
