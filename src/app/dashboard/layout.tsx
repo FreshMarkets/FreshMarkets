@@ -10,6 +10,7 @@ import {
   Bot,
   Settings,
   FileText,
+  Ship,
   Shield,
   Menu,
   X,
@@ -23,6 +24,7 @@ import { createBrowserSupabaseClient } from '@/lib/supabase';
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Shipments', href: '/dashboard/shipments', icon: Package },
+  { label: 'Tracking', href: '/dashboard/tracking', icon: Ship },
   { label: 'Contacts', href: '/dashboard/contacts', icon: Users },
   { label: 'Emails', href: '/dashboard/emails', icon: Mail },
   { label: 'AI Assistant', href: '/dashboard/ai-assistant', icon: Bot },
