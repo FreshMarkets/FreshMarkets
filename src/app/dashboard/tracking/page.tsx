@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Ship,
@@ -8,6 +8,7 @@ import {
   RefreshCw,
   CheckCircle2,
   Circle,
+  Save,
   Clock,
   MapPin,
   Calendar,
@@ -61,6 +62,8 @@ function trackingStatusIcon(status: string | null) {
 function QuickTrack({ onTracked }: { onTracked: () => void }) {
   const [containerNumber, setContainerNumber] = useState('');
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [result, setResult] = useState<{
     status: string;
     eta: string | null;
@@ -76,6 +79,7 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
     setLoading(true);
     setError(null);
     setResult(null);
+    setSaved(false);
     try {
       const res = await fetch('/api/tracking/lookup', {
         method: 'POST',
@@ -89,6 +93,36 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
       setError(String(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    const num = containerNumber.trim().toUpperCase();
+    if (!num) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/tracking/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ container_number: num }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          setSaved(true);
+          setError(null);
+        } else {
+          throw new Error(data.error || 'Failed to save');
+        }
+      } else {
+        setSaved(true);
+        onTracked();
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -167,6 +201,25 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
                 <Anchor size={14} /> {result.vessel}
               </div>
             )}
+            {/* Save button */}
+            {!saved ? (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="btn-primary text-xs py-1.5 px-3 ml-auto"
+              >
+                {saving ? (
+                  <RefreshCw size={13} className="animate-spin" />
+                ) : (
+                  <Save size={13} />
+                )}
+                {saving ? 'Saving...' : 'Save & Track'}
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#00A082] ml-auto">
+                <CheckCircle2 size={13} /> Saved — auto-updating
+              </span>
+            )}
           </div>
 
           {/* Route */}
@@ -244,12 +297,17 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
 
 // ---- Tracked Shipments List ----
 
+const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
 export default function TrackingPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchTrackedShipments = () => {
+  const fetchTrackedShipments = useCallback(() => {
     setLoading(true);
     const supabase = createBrowserSupabaseClient();
     supabase
@@ -264,11 +322,28 @@ export default function TrackingPage() {
         if (data) setShipments(data as Shipment[]);
         setLoading(false);
       });
-  };
+  }, []);
+
+  // Auto-refresh: call refresh-all endpoint every 5 minutes
+  const autoRefreshAll = useCallback(async () => {
+    setAutoRefreshing(true);
+    try {
+      await fetch('/api/tracking/refresh-all');
+      setLastRefresh(new Date());
+      fetchTrackedShipments();
+    } finally {
+      setAutoRefreshing(false);
+    }
+  }, [fetchTrackedShipments]);
 
   useEffect(() => {
     fetchTrackedShipments();
-  }, []);
+    // Start auto-refresh interval
+    intervalRef.current = setInterval(autoRefreshAll, AUTO_REFRESH_INTERVAL);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [fetchTrackedShipments, autoRefreshAll]);
 
   const handleRefresh = async (shipment: Shipment) => {
     setRefreshingId(shipment.id);
@@ -313,6 +388,20 @@ export default function TrackingPage() {
             {loading
               ? 'Loading...'
               : `${shipments.length} tracked containers`}
+            {lastRefresh && (
+              <span className="ml-2 text-xs">
+                · Last updated {timeAgo(lastRefresh.toISOString())}
+              </span>
+            )}
+            {autoRefreshing && (
+              <span className="ml-2 text-xs text-[#00A082]">
+                <RefreshCw size={10} className="inline animate-spin mr-1" />
+                Auto-refreshing...
+              </span>
+            )}
+          </p>
+          <p className="text-xs text-[var(--color-fz-text-muted)] mt-0.5">
+            Auto-updates every 5 minutes · Vercel cron every 6 hours
           </p>
         </div>
         {shipments.length > 0 && (
