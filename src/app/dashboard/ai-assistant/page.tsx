@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Send,
@@ -243,6 +243,14 @@ function EmailPreviewCard({
 // ---- Main page ----
 
 export default function AIAssistantPage() {
+  return (
+    <Suspense>
+      <AIAssistantContent />
+    </Suspense>
+  );
+}
+
+function AIAssistantContent() {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState('');
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
