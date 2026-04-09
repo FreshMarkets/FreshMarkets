@@ -37,7 +37,7 @@ export async function POST(
     // Fetch shipment
     const { data: shipment, error: fetchError } = await supabase
       .from('shipments')
-      .select('id, reference, container_number, sealine_scac, loading_date, eta_override')
+      .select('id, reference, container_number, sealine_scac, loading_date, eta_override, company')
       .eq('id', id)
       .single();
 
@@ -82,9 +82,14 @@ export async function POST(
       tracking_updated_at: new Date().toISOString(),
       tracking_events: trackingEvents,
     };
-    // Only autofill dates if not manually overridden
+    // Only autofill if not manually overridden
     if (!shipment.loading_date && autoLoadingDate) updates.loading_date = autoLoadingDate;
     if (!shipment.eta_override && autoEtaDate) updates.eta_override = autoEtaDate;
+    // Autofill company from vessel name or sealine
+    const vesselName = strVal(tracking.vessels?.[0]?.name);
+    if (!shipment.company && (vesselName || tracking.metadata?.sealine)) {
+      updates.company = vesselName || tracking.metadata.sealine;
+    }
 
     const { error: updateError } = await supabase
       .from('shipments')
@@ -116,6 +121,7 @@ export async function POST(
       tracking_events: trackingEvents,
       loading_date: (updates.loading_date as string) ?? shipment.loading_date,
       eta_override: (updates.eta_override as string) ?? shipment.eta_override,
+      company: (updates.company as string) ?? shipment.company,
       vessels: tracking.vessels ?? [],
       route: tracking.route ?? null,
     });

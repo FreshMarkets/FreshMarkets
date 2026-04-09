@@ -44,7 +44,7 @@ export async function GET(request: Request) {
   // Get all shipments with a container number that aren't delivered
   const { data: shipments, error } = await supabase
     .from('shipments')
-    .select('id, container_number, sealine_scac, tracking_status')
+    .select('id, container_number, sealine_scac, tracking_status, loading_date, eta_override, company')
     .not('container_number', 'is', null)
     .not('tracking_status', 'eq', 'DELIVERED');
 
@@ -73,14 +73,26 @@ export async function GET(request: Request) {
         tracking.route?.pod?.estimatedDate ??
         null;
 
+      // Autofill dates and company only if not manually set
+      const loadEvent = rawEvents.find(
+        (e) => e.isActual && (e.eventCode === 'LDND' || e.eventCode === 'DEPA' || e.eventCode === 'GTOT'),
+      );
+      const updates: Record<string, unknown> = {
+        tracking_status: trackingStatus,
+        tracking_eta: trackingEta,
+        tracking_updated_at: new Date().toISOString(),
+        tracking_events: trackingEvents,
+      };
+      if (!shipment.loading_date && loadEvent) updates.loading_date = loadEvent.date.slice(0, 10);
+      if (!shipment.eta_override && trackingEta) updates.eta_override = trackingEta.slice(0, 10);
+      const vesselName = strVal(tracking.vessels?.[0]?.name);
+      if (!shipment.company && (vesselName || tracking.metadata?.sealine)) {
+        updates.company = vesselName || tracking.metadata.sealine;
+      }
+
       await supabase
         .from('shipments')
-        .update({
-          tracking_status: trackingStatus,
-          tracking_eta: trackingEta,
-          tracking_updated_at: new Date().toISOString(),
-          tracking_events: trackingEvents,
-        })
+        .update(updates)
         .eq('id', shipment.id);
 
       results.push({

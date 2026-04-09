@@ -216,6 +216,7 @@ function TrackInput({ shipmentId, currentNumber, onTracked }: { shipmentId: stri
         tracking_events: data.tracking_events,
         loading_date: data.loading_date,
         eta_override: data.eta_override,
+        company: data.company,
       });
     } catch (err) { setError(String(err)); } finally { setLoading(false); }
   };
@@ -319,6 +320,7 @@ export default function ShipmentDetailPage({
               tracking_events: data.tracking_events,
               loading_date: data.loading_date ?? prev.loading_date,
               eta_override: data.eta_override ?? prev.eta_override,
+              company: data.company ?? prev.company,
             }
           : prev,
       );

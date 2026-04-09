@@ -114,6 +114,7 @@ export async function POST(request: Request) {
         tracking_events: trackingEvents,
         loading_date: loadingDate,
         eta_override: etaDate,
+        company: vesselName || tracking.metadata?.sealine || null,
         created_by: 'system',
       })
       .select()
