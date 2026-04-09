@@ -88,6 +88,12 @@ export interface Shipment {
   tracking_eta: string | null;
   tracking_updated_at: string | null;
   tracking_events: SafeCubeEvent[] | null;
+  // Tracking table fields
+  po_number: string | null;
+  product: string | null;
+  supplier: string | null;
+  loading_status: string | null;
+  company: string | null;
   // Joined relations
   origin_contact?: Contact;
   destination_contact?: Contact;

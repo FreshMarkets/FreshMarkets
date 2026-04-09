@@ -9,15 +9,14 @@ import {
   CheckCircle2,
   Circle,
   Save,
-  Clock,
   MapPin,
   Calendar,
   Anchor,
   ArrowRight,
-  Package,
   Hash,
   Trash2,
   Navigation,
+  Package,
 } from 'lucide-react';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { timeAgo } from '@/lib/utils';
@@ -37,26 +36,88 @@ const EVENT_CODE_LABELS: Record<string, string> = {
   RMVD: 'Removed',
 };
 
-function trackingStatusColor(status: string | null) {
-  switch (status) {
-    case 'IN_TRANSIT':
-      return 'text-[#00A082] bg-[#00A082]/10 border-[#00A082]/20';
-    case 'DELIVERED':
-      return 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20';
-    default:
-      return 'text-[var(--color-fz-text-muted)] bg-[var(--color-fz-surface-2)] border-[var(--color-fz-border)]';
-  }
+function statusChip(status: string | null) {
+  let cls = 'text-[var(--color-fz-text-muted)] bg-[var(--color-fz-surface-2)]';
+  if (status === 'IN_TRANSIT') cls = 'text-[#00A082] bg-[#00A082]/10';
+  else if (status === 'DELIVERED') cls = 'text-emerald-600 bg-emerald-500/10';
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
+      {status === 'IN_TRANSIT' ? <Ship size={10} /> : status === 'DELIVERED' ? <CheckCircle2 size={10} /> : <Circle size={10} />}
+      {status ?? '—'}
+    </span>
+  );
 }
 
-function trackingStatusIcon(status: string | null) {
-  switch (status) {
-    case 'IN_TRANSIT':
-      return <Ship size={14} />;
-    case 'DELIVERED':
-      return <CheckCircle2 size={14} />;
-    default:
-      return <Circle size={14} />;
+// ---- Editable Cell ----
+
+function EditableCell({
+  value,
+  shipmentId,
+  field,
+  onSaved,
+  placeholder,
+  mono,
+}: {
+  value: string | null;
+  shipmentId: string;
+  field: string;
+  onSaved: (id: string, field: string, val: string | null) => void;
+  placeholder?: string;
+  mono?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const save = async () => {
+    setEditing(false);
+    const trimmed = draft.trim() || null;
+    if (trimmed === (value ?? null)) return;
+    onSaved(shipmentId, field, trimmed);
+    try {
+      await fetch(`/api/tracking/${shipmentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: trimmed }),
+      });
+    } catch {
+      // revert on error
+      onSaved(shipmentId, field, value);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className={`w-full bg-transparent border-b border-[#00A082] outline-none text-xs py-0.5 ${mono ? 'font-mono' : ''}`}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false); }
+        }}
+      />
+    );
   }
+
+  return (
+    <span
+      className={`cursor-pointer hover:text-[#00A082] transition text-xs truncate block ${mono ? 'font-mono' : ''} ${!value ? 'text-[var(--color-fz-text-muted)] italic' : ''}`}
+      onClick={() => { setDraft(value ?? ''); setEditing(true); }}
+      title="Click to edit"
+    >
+      {value || placeholder || '—'}
+    </span>
+  );
 }
 
 // ---- Quick-Track Section ----
@@ -127,7 +188,6 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
       if (!res.ok) {
         if (res.status === 409) {
           setSaved(true);
-          setError(null);
         } else {
           throw new Error(data.error || 'Failed to save');
         }
@@ -142,23 +202,14 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
     }
   };
 
-  const events = result?.events
-    ? [...result.events].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-      )
-    : [];
-
   return (
-    <div className="glass-card p-6 space-y-5">
+    <div className="glass-card p-5 space-y-4">
       <h3 className="font-semibold text-sm flex items-center gap-2">
         <Search size={15} className="text-[#00A082]" /> Quick Track
       </h3>
       <div className="flex gap-3">
         <div className="relative flex-1">
-          <Hash
-            size={16}
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-fz-text-muted)]"
-          />
+          <Hash size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-fz-text-muted)]" />
           <input
             type="text"
             placeholder="Enter container, BL, or booking number..."
@@ -169,186 +220,60 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
             onKeyDown={(e) => e.key === 'Enter' && handleTrack()}
           />
         </div>
-        <button
-          onClick={handleTrack}
-          disabled={loading || !containerNumber.trim()}
-          className="btn-primary shrink-0"
-        >
-          {loading ? (
-            <RefreshCw size={16} className="animate-spin" />
-          ) : (
-            <Search size={16} />
-          )}
+        <button onClick={handleTrack} disabled={loading || !containerNumber.trim()} className="btn-primary shrink-0">
+          {loading ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
           {loading ? 'Tracking...' : 'Track'}
         </button>
       </div>
 
       {error && (
-        <div className="px-3 py-2 rounded-lg bg-[#FF4C4C]/10 border border-[#FF4C4C]/20 text-xs text-[#D93636]">
-          {error}
-        </div>
+        <div className="px-3 py-2 rounded-lg bg-[#FF4C4C]/10 border border-[#FF4C4C]/20 text-xs text-[#D93636]">{error}</div>
       )}
 
       {result && (
-        <div className="space-y-4 animate-fade-in-up animate-fade-in-up-1">
-          {/* Status + Save */}
+        <div className="space-y-3 animate-fade-in-up animate-fade-in-up-1">
           <div className="flex items-center gap-4 flex-wrap">
-            <span
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${trackingStatusColor(result.status)}`}
-            >
-              {trackingStatusIcon(result.status)} {result.status}
-            </span>
+            {statusChip(result.status)}
             {result.eta && (
-              <div className="flex items-center gap-2 text-sm text-[var(--color-fz-text-secondary)]">
+              <span className="text-sm text-[var(--color-fz-text-secondary)] flex items-center gap-1.5">
                 <Calendar size={14} className="text-[#00A082]" />
-                ETA{' '}
-                <strong>
-                  {new Date(result.eta).toLocaleDateString('en-GB', {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
-                </strong>
-              </div>
+                ETA <strong>{new Date(result.eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</strong>
+              </span>
+            )}
+            {result.vessel && (
+              <span className="text-sm text-[var(--color-fz-text-muted)] flex items-center gap-1.5"><Anchor size={14} /> {result.vessel}</span>
+            )}
+            {(result.route.pol || result.route.pod) && (
+              <span className="text-sm flex items-center gap-1.5">
+                <MapPin size={14} className="text-[var(--color-fz-text-muted)]" />
+                {result.route.pol || '—'} <ArrowRight size={12} className="text-[var(--color-fz-text-muted)]" /> {result.route.pod || '—'}
+              </span>
+            )}
+            {result.current_location?.name && (
+              <span className="text-xs text-[#007AFF] flex items-center gap-1">
+                <Navigation size={12} /> Now: {result.current_location.name}
+              </span>
             )}
             {!saved ? (
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="btn-primary text-xs py-1.5 px-3 ml-auto"
-              >
-                {saving ? (
-                  <RefreshCw size={13} className="animate-spin" />
-                ) : (
-                  <Save size={13} />
-                )}
+              <button onClick={handleSave} disabled={saving} className="btn-primary text-xs py-1.5 px-3 ml-auto">
+                {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
                 {saving ? 'Saving...' : 'Save & Track'}
               </button>
             ) : (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#00A082] ml-auto">
-                <CheckCircle2 size={13} /> Saved — auto-updating
+                <CheckCircle2 size={13} /> Saved
               </span>
             )}
           </div>
-
-          {/* Info cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Vessel */}
-            {result.vessel && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-[var(--color-fz-surface-2)] border border-[var(--color-fz-border)]">
-                <Anchor size={16} className="text-[#00A082] shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[10px] text-[var(--color-fz-text-muted)] uppercase">Vessel</p>
-                  <p className="text-sm font-medium truncate">{result.vessel}</p>
-                  {result.sealine && (
-                    <p className="text-[10px] text-[var(--color-fz-text-muted)]">{result.sealine}</p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Route */}
-            {(result.route.pol || result.route.pod) && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-[var(--color-fz-surface-2)] border border-[var(--color-fz-border)]">
-                <MapPin size={16} className="text-[#FF9500] shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[10px] text-[var(--color-fz-text-muted)] uppercase">Route</p>
-                  <p className="text-sm font-medium truncate">
-                    {result.route.pol ?? '—'}
-                    {result.route.pol_country ? ` (${result.route.pol_country})` : ''}
-                    {' → '}
-                    {result.route.pod ?? '—'}
-                    {result.route.pod_country ? ` (${result.route.pod_country})` : ''}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Current Location */}
-            {result.current_location && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-[var(--color-fz-surface-2)] border border-[var(--color-fz-border)]">
-                <Navigation size={16} className="text-[#007AFF] shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[10px] text-[var(--color-fz-text-muted)] uppercase">Current Location</p>
-                  <p className="text-sm font-medium truncate">
-                    {result.current_location.name ?? 'Unknown'}
-                    {result.current_location.country ? `, ${result.current_location.country}` : ''}
-                  </p>
-                  <p className="text-[10px] text-[var(--color-fz-text-muted)]">
-                    {EVENT_CODE_LABELS[result.current_location.event] ?? result.current_location.event}
-                    {' · '}
-                    {new Date(result.current_location.date).toLocaleDateString('en-GB', {
-                      day: 'numeric',
-                      month: 'short',
-                    })}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Events timeline */}
-          {events.length > 0 && (
-            <div className="space-y-0 max-h-72 overflow-y-auto pr-1">
-              {events.map((ev, i) => (
-                <div key={i} className="relative pl-5 pb-4">
-                  {i < events.length - 1 && (
-                    <span className="absolute left-[5px] top-3 bottom-0 w-px bg-[var(--color-fz-border)]" />
-                  )}
-                  <span
-                    className={`absolute left-0 top-1.5 w-2.5 h-2.5 rounded-full border-2 ${
-                      ev.isActual
-                        ? 'bg-[#00A082] border-[#00A082]'
-                        : 'bg-transparent border-[var(--color-fz-border)]'
-                    }`}
-                  />
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-semibold text-[var(--color-fz-text)]">
-                        {EVENT_CODE_LABELS[ev.eventCode] ?? ev.eventCode}
-                      </span>
-                      {!ev.isActual && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--color-fz-surface-2)] text-[var(--color-fz-text-muted)] border border-[var(--color-fz-border)]">
-                          EST
-                        </span>
-                      )}
-                    </div>
-                    {ev.location?.name && (
-                      <p className="text-xs text-[var(--color-fz-text-muted)] mt-0.5">
-                        {ev.location.name}
-                        {ev.location.country ? `, ${ev.location.country}` : ''}
-                        {ev.location.locode ? ` (${ev.location.locode})` : ''}
-                      </p>
-                    )}
-                    {ev.facility && (
-                      <p className="text-[10px] text-[var(--color-fz-text-muted)]">
-                        {ev.facility}
-                      </p>
-                    )}
-                    <p className="text-[10px] text-[var(--color-fz-text-muted)] mt-0.5">
-                      {new Date(ev.date).toLocaleDateString('en-GB', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>
   );
 }
 
-// ---- Tracked Shipments List ----
+// ---- Main Page ----
 
-const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000;
 
 export default function TrackingPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -390,31 +315,17 @@ export default function TrackingPage() {
   useEffect(() => {
     fetchTrackedShipments();
     intervalRef.current = setInterval(autoRefreshAll, AUTO_REFRESH_INTERVAL);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchTrackedShipments, autoRefreshAll]);
 
   const handleRefresh = async (shipment: Shipment) => {
     setRefreshingId(shipment.id);
     try {
-      const res = await fetch(`/api/shipments/${shipment.id}/track`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/shipments/${shipment.id}/track`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setShipments((prev) =>
-          prev.map((s) =>
-            s.id === shipment.id
-              ? {
-                  ...s,
-                  tracking_status: data.tracking_status,
-                  tracking_eta: data.tracking_eta,
-                  tracking_updated_at: data.tracking_updated_at,
-                  tracking_events: data.tracking_events,
-                }
-              : s,
-          ),
+          prev.map((s) => s.id === shipment.id ? { ...s, ...data } : s),
         );
       }
     } finally {
@@ -423,26 +334,52 @@ export default function TrackingPage() {
   };
 
   const handleDelete = async (shipment: Shipment) => {
-    if (!confirm(`Remove tracking for ${shipment.container_number}? This will delete the shipment record.`)) {
-      return;
-    }
+    if (!confirm(`Remove tracking for ${shipment.container_number}?`)) return;
     setDeletingId(shipment.id);
     try {
-      const res = await fetch(`/api/tracking/${shipment.id}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        setShipments((prev) => prev.filter((s) => s.id !== shipment.id));
-      }
+      const res = await fetch(`/api/tracking/${shipment.id}`, { method: 'DELETE' });
+      if (res.ok) setShipments((prev) => prev.filter((s) => s.id !== shipment.id));
     } finally {
       setDeletingId(null);
     }
   };
 
   const handleRefreshAll = async () => {
-    for (const s of shipments) {
-      await handleRefresh(s);
-    }
+    for (const s of shipments) await handleRefresh(s);
+  };
+
+  const handleCellSave = (id: string, field: string, val: string | null) => {
+    setShipments((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, [field]: val } : s)),
+    );
+  };
+
+  // Derive origin/destination from latest events for API-tracked shipments
+  const getOrigin = (s: Shipment) => {
+    if (s.origin_contact?.city) return `${s.origin_contact.city}${s.origin_contact.country ? ', ' + s.origin_contact.country : ''}`;
+    const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
+    const sorted = [...events].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const first = sorted[0];
+    if (first?.location?.name) return `${first.location.name}${first.location.country ? ', ' + first.location.country : ''}`;
+    return '—';
+  };
+
+  const getDestination = (s: Shipment) => {
+    if (s.destination_contact?.city) return `${s.destination_contact.city}${s.destination_contact.country ? ', ' + s.destination_contact.country : ''}`;
+    const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
+    const estimated = events.filter((e) => !e.isActual).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const last = estimated[0];
+    if (last?.location?.name) return `${last.location.name}${last.location.country ? ', ' + last.location.country : ''}`;
+    return '—';
+  };
+
+  const getLoadingStatus = (s: Shipment) => {
+    if (s.loading_status) return s.loading_status;
+    const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
+    const actual = events.filter((e) => e.isActual).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const latest = actual[0];
+    if (latest) return EVENT_CODE_LABELS[latest.eventCode] ?? latest.eventCode;
+    return '—';
   };
 
   return (
@@ -452,14 +389,7 @@ export default function TrackingPage() {
         <div>
           <h1 className="text-2xl font-bold">Container Tracking</h1>
           <p className="text-sm text-[var(--color-fz-text-muted)]">
-            {loading
-              ? 'Loading...'
-              : `${shipments.length} tracked containers`}
-            {lastRefresh && (
-              <span className="ml-2 text-xs">
-                · Last updated {timeAgo(lastRefresh.toISOString())}
-              </span>
-            )}
+            {loading ? 'Loading...' : `${shipments.length} tracked containers`}
             {autoRefreshing && (
               <span className="ml-2 text-xs text-[#00A082]">
                 <RefreshCw size={10} className="inline animate-spin mr-1" />
@@ -467,14 +397,10 @@ export default function TrackingPage() {
               </span>
             )}
           </p>
-          <p className="text-xs text-[var(--color-fz-text-muted)] mt-0.5">
-            Auto-updates every 5 minutes · Vercel cron every 6 hours
-          </p>
         </div>
         {shipments.length > 0 && (
           <button onClick={handleRefreshAll} className="btn-secondary">
-            <RefreshCw size={16} />
-            Refresh All
+            <RefreshCw size={16} /> Refresh All
           </button>
         )}
       </div>
@@ -484,200 +410,132 @@ export default function TrackingPage() {
         <QuickTrack onTracked={fetchTrackedShipments} />
       </div>
 
-      {/* Tracked Shipments */}
+      {/* Table */}
       {loading && (
         <div className="text-center py-16 text-[var(--color-fz-text-muted)]">
           <RefreshCw size={24} className="mx-auto mb-3 animate-spin" />
-          Loading tracked shipments...
+          Loading...
         </div>
       )}
 
       {!loading && shipments.length === 0 && (
         <div className="text-center py-16">
           <Ship size={40} className="mx-auto text-[var(--color-fz-text-muted)] mb-4" />
-          <p className="text-[var(--color-fz-text-muted)]">
-            No tracked shipments yet.
-          </p>
-          <p className="text-xs text-[var(--color-fz-text-muted)] mt-1">
-            Add a container number to a shipment or use Quick Track above.
-          </p>
+          <p className="text-[var(--color-fz-text-muted)]">No tracked shipments yet.</p>
+          <p className="text-xs text-[var(--color-fz-text-muted)] mt-1">Use Quick Track above to start tracking containers.</p>
         </div>
       )}
 
       {!loading && shipments.length > 0 && (
-        <div className="space-y-3 animate-fade-in-up animate-fade-in-up-3">
-          {shipments.map((shipment) => {
-            const events: SafeCubeEvent[] = Array.isArray(
-              shipment.tracking_events,
-            )
-              ? [...shipment.tracking_events].sort(
-                  (a, b) =>
-                    new Date(b.date).getTime() - new Date(a.date).getTime(),
-                )
-              : [];
-            const latestEvent = events[0] ?? null;
-            const latestActual = events.find((e) => e.isActual) ?? null;
+        <div className="glass-card overflow-hidden animate-fade-in-up animate-fade-in-up-3">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-[var(--color-fz-surface-2)] border-b border-[var(--color-fz-border)]">
+                  {['Update', 'PO', 'Product', 'Supplier', 'Loading', 'ETA', 'Origin', 'Destination', 'Booking/Container', 'Company', ''].map((h) => (
+                    <th key={h} className="px-4 py-3 text-xs font-semibold text-[var(--color-fz-text-muted)] uppercase tracking-wider whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-fz-border)]">
+                {shipments.map((s) => {
+                  const eta = s.tracking_eta
+                    ? new Date(s.tracking_eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                    : '—';
 
-            return (
-              <div key={shipment.id} className="glass-card p-5">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  {/* Left: container info */}
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className="w-11 h-11 rounded-xl bg-[#00A082]/10 flex items-center justify-center text-[#00A082] shrink-0">
-                      <Ship size={20} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono font-semibold text-sm">
-                          {shipment.container_number}
+                  return (
+                    <tr key={s.id} className="hover:bg-[var(--color-fz-surface-2)]/50 transition">
+                      {/* Update */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleRefresh(s)}
+                            disabled={refreshingId === s.id}
+                            className="btn-ghost p-1.5"
+                            title="Refresh tracking"
+                          >
+                            <RefreshCw size={13} className={refreshingId === s.id ? 'animate-spin text-[#00A082]' : ''} />
+                          </button>
+                          {statusChip(s.tracking_status)}
+                          {s.tracking_updated_at && (
+                            <span className="text-[9px] text-[var(--color-fz-text-muted)]">
+                              {timeAgo(s.tracking_updated_at)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* PO */}
+                      <td className="px-4 py-3 min-w-[100px]">
+                        <EditableCell value={s.po_number} shipmentId={s.id} field="po_number" onSaved={handleCellSave} placeholder="Add PO" mono />
+                      </td>
+
+                      {/* Product */}
+                      <td className="px-4 py-3 min-w-[120px]">
+                        <EditableCell value={s.product} shipmentId={s.id} field="product" onSaved={handleCellSave} placeholder="Add product" />
+                      </td>
+
+                      {/* Supplier */}
+                      <td className="px-4 py-3 min-w-[120px]">
+                        <EditableCell value={s.supplier} shipmentId={s.id} field="supplier" onSaved={handleCellSave} placeholder="Add supplier" />
+                      </td>
+
+                      {/* Loading */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="text-xs">{getLoadingStatus(s)}</span>
+                      </td>
+
+                      {/* ETA */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`text-xs font-medium ${s.tracking_eta ? 'text-[#00A082]' : 'text-[var(--color-fz-text-muted)]'}`}>
+                          {eta}
                         </span>
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${trackingStatusColor(shipment.tracking_status)}`}
-                        >
-                          {trackingStatusIcon(shipment.tracking_status)}{' '}
-                          {shipment.tracking_status ?? 'UNKNOWN'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-[var(--color-fz-text-muted)] mt-0.5">
-                        <Link
-                          href={`/dashboard/shipments/${shipment.id}`}
-                          className="hover:text-[#00A082] transition"
-                        >
-                          {shipment.reference}
+                      </td>
+
+                      {/* Origin */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="text-xs">{getOrigin(s)}</span>
+                      </td>
+
+                      {/* Destination */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="text-xs">{getDestination(s)}</span>
+                      </td>
+
+                      {/* Booking/Container */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <Link href={`/dashboard/shipments/${s.id}`} className="text-xs font-mono font-semibold hover:text-[#00A082] transition">
+                          {s.container_number}
                         </Link>
-                        <span>·</span>
-                        <span className="truncate">
-                          {shipment.description}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Middle: Route + Current Location */}
-                  <div className="flex flex-col gap-1 shrink-0">
-                    <div className="flex items-center gap-2 text-sm text-[var(--color-fz-text-secondary)]">
-                      <div className="flex items-center gap-1.5">
-                        <MapPin size={14} className="text-[var(--color-fz-text-muted)]" />
-                        <span>{shipment.origin_contact?.city || '—'}</span>
-                      </div>
-                      <ArrowRight size={14} className="text-[var(--color-fz-text-muted)]" />
-                      <div className="flex items-center gap-1.5">
-                        <MapPin size={14} className="text-[#00A082]" />
-                        <span>{shipment.destination_contact?.city || '—'}</span>
-                      </div>
-                    </div>
-                    {latestActual?.location?.name && (
-                      <div className="flex items-center gap-1.5 text-xs text-[#007AFF]">
-                        <Navigation size={12} />
-                        <span>
-                          Now: {latestActual.location.name}
-                          {latestActual.location.country ? `, ${latestActual.location.country}` : ''}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Right: ETA + actions */}
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
-                      {shipment.tracking_eta && (
-                        <p className="text-xs font-medium text-[#00A082]">
-                          ETA{' '}
-                          {new Date(
-                            shipment.tracking_eta,
-                          ).toLocaleDateString('en-GB', {
-                            day: 'numeric',
-                            month: 'short',
-                          })}
-                        </p>
-                      )}
-                      {latestEvent && (
-                        <p className="text-[10px] text-[var(--color-fz-text-muted)]">
-                          {EVENT_CODE_LABELS[latestEvent.eventCode] ??
-                            latestEvent.eventCode}{' '}
-                          · {latestEvent.location?.name ?? ''}
-                        </p>
-                      )}
-                      {shipment.tracking_updated_at && (
-                        <p className="text-[10px] text-[var(--color-fz-text-muted)]">
-                          Updated {timeAgo(shipment.tracking_updated_at)}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleRefresh(shipment)}
-                      disabled={refreshingId === shipment.id}
-                      className="btn-ghost p-2"
-                      title="Refresh tracking"
-                    >
-                      <RefreshCw
-                        size={14}
-                        className={
-                          refreshingId === shipment.id ? 'animate-spin' : ''
-                        }
-                      />
-                    </button>
-                    <Link
-                      href={`/dashboard/shipments/${shipment.id}`}
-                      className="btn-ghost p-2"
-                      title="View shipment"
-                    >
-                      <Package size={14} />
-                    </Link>
-                    <button
-                      onClick={() => handleDelete(shipment)}
-                      disabled={deletingId === shipment.id}
-                      className="btn-ghost p-2 text-[#FF4C4C] hover:bg-[#FF4C4C]/10"
-                      title="Delete tracking"
-                    >
-                      <Trash2
-                        size={14}
-                        className={deletingId === shipment.id ? 'animate-pulse' : ''}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Compact timeline — last 4 events */}
-                {events.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-[var(--color-fz-border)] flex items-center gap-4 overflow-x-auto">
-                    {events.slice(0, 4).map((ev, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-2 text-[10px] shrink-0"
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            ev.isActual
-                              ? 'bg-[#00A082]'
-                              : 'bg-[var(--color-fz-border)]'
-                          }`}
-                        />
-                        <span className="font-semibold text-[var(--color-fz-text-secondary)]">
-                          {EVENT_CODE_LABELS[ev.eventCode] ?? ev.eventCode}
-                        </span>
-                        <span className="text-[var(--color-fz-text-muted)]">
-                          {ev.location?.name ?? ''}
-                        </span>
-                        <span className="text-[var(--color-fz-text-muted)]">
-                          {new Date(ev.date).toLocaleDateString('en-GB', {
-                            day: 'numeric',
-                            month: 'short',
-                          })}
-                        </span>
-                        {i < Math.min(events.length - 1, 3) && (
-                          <ArrowRight
-                            size={10}
-                            className="text-[var(--color-fz-border)]"
-                          />
+                        {s.sealine_scac && (
+                          <span className="text-[10px] text-[var(--color-fz-text-muted)] ml-1.5">{s.sealine_scac}</span>
                         )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      </td>
+
+                      {/* Company */}
+                      <td className="px-4 py-3 min-w-[120px]">
+                        <EditableCell value={s.company} shipmentId={s.id} field="company" onSaved={handleCellSave} placeholder="Add company" />
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <button
+                          onClick={() => handleDelete(s)}
+                          disabled={deletingId === s.id}
+                          className="btn-ghost p-1.5 text-[#FF4C4C] hover:bg-[#FF4C4C]/10"
+                          title="Delete"
+                        >
+                          <Trash2 size={13} className={deletingId === s.id ? 'animate-pulse' : ''} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
