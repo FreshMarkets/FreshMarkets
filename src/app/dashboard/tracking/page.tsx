@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import {
   Ship,
@@ -16,7 +16,6 @@ import {
   Hash,
   Trash2,
   Navigation,
-  Package,
 } from 'lucide-react';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { timeAgo } from '@/lib/utils';
@@ -51,30 +50,17 @@ function statusChip(status: string | null) {
 // ---- Editable Cell ----
 
 function EditableCell({
-  value,
-  shipmentId,
-  field,
-  onSaved,
-  placeholder,
-  mono,
+  value, shipmentId, field, onSaved, placeholder, mono,
 }: {
-  value: string | null;
-  shipmentId: string;
-  field: string;
+  value: string | null; shipmentId: string; field: string;
   onSaved: (id: string, field: string, val: string | null) => void;
-  placeholder?: string;
-  mono?: boolean;
+  placeholder?: string; mono?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
+  useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
 
   const save = async () => {
     setEditing(false);
@@ -83,28 +69,18 @@ function EditableCell({
     onSaved(shipmentId, field, trimmed);
     try {
       await fetch(`/api/tracking/${shipmentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [field]: trimmed }),
       });
-    } catch {
-      // revert on error
-      onSaved(shipmentId, field, value);
-    }
+    } catch { onSaved(shipmentId, field, value); }
   };
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
+      <input ref={inputRef}
         className={`w-full bg-transparent border-b border-[#00A082] outline-none text-xs py-0.5 ${mono ? 'font-mono' : ''}`}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={save}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') save();
-          if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false); }
-        }}
+        value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={save}
+        onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false); } }}
       />
     );
   }
@@ -120,26 +96,59 @@ function EditableCell({
   );
 }
 
+// ---- Date Cell (calendar picker) ----
+
+function DateCell({
+  value, shipmentId, field, onSaved, fallback,
+}: {
+  value: string | null; shipmentId: string; field: string;
+  onSaved: (id: string, field: string, val: string | null) => void;
+  fallback?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const displayValue = value
+    ? new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    : fallback || '—';
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value || null;
+    onSaved(shipmentId, field, val);
+    try {
+      await fetch(`/api/tracking/${shipmentId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: val }),
+      });
+    } catch { onSaved(shipmentId, field, value); }
+  };
+
+  return (
+    <div className="relative">
+      <span
+        className={`cursor-pointer hover:text-[#00A082] transition text-xs block ${value ? 'font-medium' : 'text-[var(--color-fz-text-muted)]'}`}
+        onClick={() => inputRef.current?.showPicker()}
+        title="Click to pick date"
+      >
+        {displayValue}
+      </span>
+      <input
+        ref={inputRef}
+        type="date"
+        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+        value={value ?? ''}
+        onChange={handleChange}
+      />
+    </div>
+  );
+}
+
 // ---- Quick-Track Section ----
 
 interface TrackingResult {
-  status: string;
-  sealine: string | null;
-  eta: string | null;
-  events: SafeCubeEvent[];
-  vessel: string | null;
-  route: {
-    pol: string | null;
-    pol_country: string | null;
-    pod: string | null;
-    pod_country: string | null;
-  };
-  current_location: {
-    name: string | null;
-    country: string | null;
-    event: string;
-    date: string;
-  } | null;
+  status: string; sealine: string | null; eta: string | null;
+  events: SafeCubeEvent[]; vessel: string | null;
+  route: { pol: string | null; pol_country: string | null; pod: string | null; pod_country: string | null };
+  current_location: { name: string | null; country: string | null; event: string; date: string } | null;
 }
 
 function QuickTrack({ onTracked }: { onTracked: () => void }) {
@@ -153,53 +162,31 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
   const handleTrack = async () => {
     const num = containerNumber.trim().toUpperCase();
     if (!num) return;
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setSaved(false);
+    setLoading(true); setError(null); setResult(null); setSaved(false);
     try {
       const res = await fetch('/api/tracking/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ container_number: num }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Tracking lookup failed');
       setResult(data);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setError(String(err)); } finally { setLoading(false); }
   };
 
   const handleSave = async () => {
     const num = containerNumber.trim().toUpperCase();
     if (!num) return;
-    setSaving(true);
-    setError(null);
+    setSaving(true); setError(null);
     try {
       const res = await fetch('/api/tracking/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ container_number: num }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        if (res.status === 409) {
-          setSaved(true);
-        } else {
-          throw new Error(data.error || 'Failed to save');
-        }
-      } else {
-        setSaved(true);
-        onTracked();
-      }
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setSaving(false);
-    }
+      if (!res.ok) { if (res.status === 409) setSaved(true); else throw new Error(data.error || 'Failed to save'); }
+      else { setSaved(true); onTracked(); }
+    } catch (err) { setError(String(err)); } finally { setSaving(false); }
   };
 
   return (
@@ -210,61 +197,30 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
       <div className="flex gap-3">
         <div className="relative flex-1">
           <Hash size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-fz-text-muted)]" />
-          <input
-            type="text"
-            placeholder="Enter container, BL, or booking number..."
-            className="input font-mono"
-            style={{ paddingLeft: '3.25rem' }}
-            value={containerNumber}
-            onChange={(e) => setContainerNumber(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === 'Enter' && handleTrack()}
-          />
+          <input type="text" placeholder="Enter container, BL, or booking number..."
+            className="input font-mono" style={{ paddingLeft: '3.25rem' }}
+            value={containerNumber} onChange={(e) => setContainerNumber(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === 'Enter' && handleTrack()} />
         </div>
         <button onClick={handleTrack} disabled={loading || !containerNumber.trim()} className="btn-primary shrink-0">
           {loading ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
           {loading ? 'Tracking...' : 'Track'}
         </button>
       </div>
-
-      {error && (
-        <div className="px-3 py-2 rounded-lg bg-[#FF4C4C]/10 border border-[#FF4C4C]/20 text-xs text-[#D93636]">{error}</div>
-      )}
-
+      {error && <div className="px-3 py-2 rounded-lg bg-[#FF4C4C]/10 border border-[#FF4C4C]/20 text-xs text-[#D93636]">{error}</div>}
       {result && (
-        <div className="space-y-3 animate-fade-in-up animate-fade-in-up-1">
-          <div className="flex items-center gap-4 flex-wrap">
-            {statusChip(result.status)}
-            {result.eta && (
-              <span className="text-sm text-[var(--color-fz-text-secondary)] flex items-center gap-1.5">
-                <Calendar size={14} className="text-[#00A082]" />
-                ETA <strong>{new Date(result.eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</strong>
-              </span>
-            )}
-            {result.vessel && (
-              <span className="text-sm text-[var(--color-fz-text-muted)] flex items-center gap-1.5"><Anchor size={14} /> {result.vessel}</span>
-            )}
-            {(result.route.pol || result.route.pod) && (
-              <span className="text-sm flex items-center gap-1.5">
-                <MapPin size={14} className="text-[var(--color-fz-text-muted)]" />
-                {result.route.pol || '—'} <ArrowRight size={12} className="text-[var(--color-fz-text-muted)]" /> {result.route.pod || '—'}
-              </span>
-            )}
-            {result.current_location?.name && (
-              <span className="text-xs text-[#007AFF] flex items-center gap-1">
-                <Navigation size={12} /> Now: {result.current_location.name}
-              </span>
-            )}
-            {!saved ? (
-              <button onClick={handleSave} disabled={saving} className="btn-primary text-xs py-1.5 px-3 ml-auto">
-                {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
-                {saving ? 'Saving...' : 'Save & Track'}
-              </button>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#00A082] ml-auto">
-                <CheckCircle2 size={13} /> Saved
-              </span>
-            )}
-          </div>
+        <div className="flex items-center gap-4 flex-wrap animate-fade-in-up animate-fade-in-up-1">
+          {statusChip(result.status)}
+          {result.eta && <span className="text-sm text-[var(--color-fz-text-secondary)] flex items-center gap-1.5"><Calendar size={14} className="text-[#00A082]" /> ETA <strong>{new Date(result.eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>}
+          {result.vessel && <span className="text-sm text-[var(--color-fz-text-muted)] flex items-center gap-1.5"><Anchor size={14} /> {result.vessel}</span>}
+          {(result.route.pol || result.route.pod) && <span className="text-sm flex items-center gap-1.5"><MapPin size={14} className="text-[var(--color-fz-text-muted)]" /> {result.route.pol || '—'} <ArrowRight size={12} className="text-[var(--color-fz-text-muted)]" /> {result.route.pod || '—'}</span>}
+          {result.current_location?.name && <span className="text-xs text-[#007AFF] flex items-center gap-1"><Navigation size={12} /> Now: {result.current_location.name}</span>}
+          {!saved ? (
+            <button onClick={handleSave} disabled={saving} className="btn-primary text-xs py-1.5 px-3 ml-auto">
+              {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+              {saving ? 'Saving...' : 'Save & Track'}
+            </button>
+          ) : <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#00A082] ml-auto"><CheckCircle2 size={13} /> Saved</span>}
         </div>
       )}
     </div>
@@ -281,7 +237,6 @@ export default function TrackingPage() {
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchTrackedShipments = useCallback(() => {
@@ -289,27 +244,17 @@ export default function TrackingPage() {
     const supabase = createBrowserSupabaseClient();
     supabase
       .from('shipments')
-      .select(
-        `*, origin_contact:contacts!origin_contact_id(name, city, country),
-             destination_contact:contacts!destination_contact_id(name, city, country)`,
-      )
+      .select(`*, origin_contact:contacts!origin_contact_id(name, city, country),
+                   destination_contact:contacts!destination_contact_id(name, city, country)`)
       .not('container_number', 'is', null)
       .order('tracking_updated_at', { ascending: false, nullsFirst: false })
-      .then(({ data }) => {
-        if (data) setShipments(data as Shipment[]);
-        setLoading(false);
-      });
+      .then(({ data }) => { if (data) setShipments(data as Shipment[]); setLoading(false); });
   }, []);
 
   const autoRefreshAll = useCallback(async () => {
     setAutoRefreshing(true);
-    try {
-      await fetch('/api/tracking/refresh-all');
-      setLastRefresh(new Date());
-      fetchTrackedShipments();
-    } finally {
-      setAutoRefreshing(false);
-    }
+    try { await fetch('/api/tracking/refresh-all'); fetchTrackedShipments(); }
+    finally { setAutoRefreshing(false); }
   }, [fetchTrackedShipments]);
 
   useEffect(() => {
@@ -323,14 +268,8 @@ export default function TrackingPage() {
     try {
       const res = await fetch(`/api/shipments/${shipment.id}/track`, { method: 'POST' });
       const data = await res.json();
-      if (res.ok) {
-        setShipments((prev) =>
-          prev.map((s) => s.id === shipment.id ? { ...s, ...data } : s),
-        );
-      }
-    } finally {
-      setRefreshingId(null);
-    }
+      if (res.ok) setShipments((prev) => prev.map((s) => s.id === shipment.id ? { ...s, ...data } : s));
+    } finally { setRefreshingId(null); }
   };
 
   const handleDelete = async (shipment: Shipment) => {
@@ -339,22 +278,15 @@ export default function TrackingPage() {
     try {
       const res = await fetch(`/api/tracking/${shipment.id}`, { method: 'DELETE' });
       if (res.ok) setShipments((prev) => prev.filter((s) => s.id !== shipment.id));
-    } finally {
-      setDeletingId(null);
-    }
+    } finally { setDeletingId(null); }
   };
 
-  const handleRefreshAll = async () => {
-    for (const s of shipments) await handleRefresh(s);
-  };
+  const handleRefreshAll = async () => { for (const s of shipments) await handleRefresh(s); };
 
   const handleCellSave = (id: string, field: string, val: string | null) => {
-    setShipments((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, [field]: val } : s)),
-    );
+    setShipments((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: val } : s)));
   };
 
-  // Derive origin/destination from latest events for API-tracked shipments
   const getOrigin = (s: Shipment) => {
     if (s.origin_contact?.city) return `${s.origin_contact.city}${s.origin_contact.country ? ', ' + s.origin_contact.country : ''}`;
     const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
@@ -373,13 +305,17 @@ export default function TrackingPage() {
     return '—';
   };
 
-  const getLoadingDate = (s: Shipment) => {
+  const getLoadingDateFallback = (s: Shipment) => {
     const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
-    // Find loading event (LDND) or first departure (DEPA) or first actual event
     const loadEvent = events.find((e) => e.isActual && e.eventCode === 'LDND')
       ?? events.find((e) => e.isActual && e.eventCode === 'DEPA')
       ?? events.find((e) => e.isActual && e.eventCode === 'GTOT');
     if (loadEvent) return new Date(loadEvent.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return '—';
+  };
+
+  const getEtaFallback = (s: Shipment) => {
+    if (s.tracking_eta) return new Date(s.tracking_eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     return '—';
   };
 
@@ -391,18 +327,11 @@ export default function TrackingPage() {
           <h1 className="text-2xl font-bold">Container Tracking</h1>
           <p className="text-sm text-[var(--color-fz-text-muted)]">
             {loading ? 'Loading...' : `${shipments.length} tracked containers`}
-            {autoRefreshing && (
-              <span className="ml-2 text-xs text-[#00A082]">
-                <RefreshCw size={10} className="inline animate-spin mr-1" />
-                Auto-refreshing...
-              </span>
-            )}
+            {autoRefreshing && <span className="ml-2 text-xs text-[#00A082]"><RefreshCw size={10} className="inline animate-spin mr-1" />Auto-refreshing...</span>}
           </p>
         </div>
         {shipments.length > 0 && (
-          <button onClick={handleRefreshAll} className="btn-secondary">
-            <RefreshCw size={16} /> Refresh All
-          </button>
+          <button onClick={handleRefreshAll} className="btn-secondary"><RefreshCw size={16} /> Refresh All</button>
         )}
       </div>
 
@@ -414,8 +343,7 @@ export default function TrackingPage() {
       {/* Table */}
       {loading && (
         <div className="text-center py-16 text-[var(--color-fz-text-muted)]">
-          <RefreshCw size={24} className="mx-auto mb-3 animate-spin" />
-          Loading...
+          <RefreshCw size={24} className="mx-auto mb-3 animate-spin" /> Loading...
         </div>
       )}
 
@@ -432,52 +360,41 @@ export default function TrackingPage() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-left text-[11px]">
               <colgroup>
-                <col style={{ width: '9%' }} />  {/* Update */}
+                <col style={{ width: '7%' }} />  {/* Status */}
                 <col style={{ width: '8%' }} />  {/* PO */}
                 <col style={{ width: '10%' }} /> {/* Product */}
                 <col style={{ width: '10%' }} /> {/* Supplier */}
                 <col style={{ width: '8%' }} />  {/* Loading */}
-                <col style={{ width: '9%' }} />  {/* ETA */}
-                <col style={{ width: '12%' }} /> {/* Origin */}
-                <col style={{ width: '12%' }} /> {/* Destination */}
+                <col style={{ width: '8%' }} />  {/* ETA */}
+                <col style={{ width: '13%' }} /> {/* Origin */}
+                <col style={{ width: '13%' }} /> {/* Destination */}
                 <col style={{ width: '13%' }} /> {/* Booking/Container */}
-                <col style={{ width: '9%' }} />  {/* Company */}
+                <col style={{ width: '10%' }} /> {/* Company */}
               </colgroup>
               <thead>
                 <tr className="bg-[var(--color-fz-surface-2)] border-b border-[var(--color-fz-border)]">
-                  {['Update', 'PO', 'Product', 'Supplier', 'Loading', 'ETA', 'Origin', 'Destination', 'Booking/Container', 'Company'].map((h) => (
-                    <th key={h} className="px-2 py-2.5 text-[10px] font-semibold text-[var(--color-fz-text-muted)] uppercase tracking-wider truncate">
+                  {['', 'PO', 'Product', 'Supplier', 'Loading', 'ETA', 'Origin', 'Destination', 'Booking/Container', 'Company'].map((h, i) => (
+                    <th key={i} className="px-2 py-2.5 text-[10px] font-semibold text-[var(--color-fz-text-muted)] uppercase tracking-wider truncate">
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--color-fz-border)]">
-                {shipments.map((s) => {
-                  const eta = s.tracking_eta
-                    ? new Date(s.tracking_eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-                    : '—';
-
-                  return (
-                    <tr key={s.id} className="hover:bg-[var(--color-fz-surface-2)]/50 transition group">
-                      {/* Update */}
-                      <td className="px-2 py-2 overflow-hidden">
+              <tbody>
+                {shipments.map((s) => (
+                  <Fragment key={s.id}>
+                    {/* Main row */}
+                    <tr className="hover:bg-[var(--color-fz-surface-2)]/50 transition group border-t border-[var(--color-fz-border)]">
+                      {/* Status + Actions */}
+                      <td className="px-2 py-2">
                         <div className="flex items-center gap-1">
-                          <EditableCell value={s.loading_status} shipmentId={s.id} field="loading_status" onSaved={handleCellSave} placeholder="Add note" />
-                          <button
-                            onClick={() => handleRefresh(s)}
-                            disabled={refreshingId === s.id}
-                            className="btn-ghost p-1 shrink-0"
-                            title="Refresh"
-                          >
+                          {statusChip(s.tracking_status)}
+                          <button onClick={() => handleRefresh(s)} disabled={refreshingId === s.id}
+                            className="btn-ghost p-1 shrink-0" title="Refresh">
                             <RefreshCw size={11} className={refreshingId === s.id ? 'animate-spin text-[#00A082]' : ''} />
                           </button>
-                          <button
-                            onClick={() => handleDelete(s)}
-                            disabled={deletingId === s.id}
-                            className="btn-ghost p-1 text-[#FF4C4C] hover:bg-[#FF4C4C]/10 opacity-0 group-hover:opacity-100 transition shrink-0"
-                            title="Delete"
-                          >
+                          <button onClick={() => handleDelete(s)} disabled={deletingId === s.id}
+                            className="btn-ghost p-1 text-[#FF4C4C] hover:bg-[#FF4C4C]/10 opacity-0 group-hover:opacity-100 transition shrink-0" title="Delete">
                             <Trash2 size={11} className={deletingId === s.id ? 'animate-pulse' : ''} />
                           </button>
                         </div>
@@ -498,36 +415,28 @@ export default function TrackingPage() {
                         <EditableCell value={s.supplier} shipmentId={s.id} field="supplier" onSaved={handleCellSave} placeholder="—" />
                       </td>
 
-                      {/* Loading */}
-                      <td className="px-2 py-2 truncate">
-                        {getLoadingDate(s)}
+                      {/* Loading (date picker) */}
+                      <td className="px-2 py-2">
+                        <DateCell value={s.loading_date} shipmentId={s.id} field="loading_date" onSaved={handleCellSave} fallback={getLoadingDateFallback(s)} />
                       </td>
 
-                      {/* ETA */}
-                      <td className="px-2 py-2 truncate">
-                        <span className={`font-medium ${s.tracking_eta ? 'text-[#00A082]' : 'text-[var(--color-fz-text-muted)]'}`}>
-                          {eta}
-                        </span>
+                      {/* ETA (date picker) */}
+                      <td className="px-2 py-2">
+                        <DateCell value={s.eta_override} shipmentId={s.id} field="eta_override" onSaved={handleCellSave} fallback={getEtaFallback(s)} />
                       </td>
 
                       {/* Origin */}
-                      <td className="px-2 py-2 truncate" title={getOrigin(s)}>
-                        {getOrigin(s)}
-                      </td>
+                      <td className="px-2 py-2 truncate" title={getOrigin(s)}>{getOrigin(s)}</td>
 
                       {/* Destination */}
-                      <td className="px-2 py-2 truncate" title={getDestination(s)}>
-                        {getDestination(s)}
-                      </td>
+                      <td className="px-2 py-2 truncate" title={getDestination(s)}>{getDestination(s)}</td>
 
                       {/* Booking/Container */}
                       <td className="px-2 py-2 truncate">
                         <Link href={`/dashboard/shipments/${s.id}`} className="font-mono font-semibold hover:text-[#00A082] transition">
                           {s.container_number}
                         </Link>
-                        {s.sealine_scac && (
-                          <span className="text-[9px] text-[var(--color-fz-text-muted)] ml-1">{s.sealine_scac}</span>
-                        )}
+                        {s.sealine_scac && <span className="text-[9px] text-[var(--color-fz-text-muted)] ml-1">{s.sealine_scac}</span>}
                       </td>
 
                       {/* Company */}
@@ -535,8 +444,25 @@ export default function TrackingPage() {
                         <EditableCell value={s.company} shipmentId={s.id} field="company" onSaved={handleCellSave} placeholder="—" />
                       </td>
                     </tr>
-                  );
-                })}
+
+                    {/* Update note row */}
+                    <tr className="hover:bg-[var(--color-fz-surface-2)]/50 transition">
+                      <td colSpan={10} className="px-2 py-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-semibold text-[var(--color-fz-text-muted)] uppercase shrink-0">Update:</span>
+                          <div className="flex-1">
+                            <EditableCell value={s.update_note} shipmentId={s.id} field="update_note" onSaved={handleCellSave} placeholder="Click to add update note..." />
+                          </div>
+                          {s.tracking_updated_at && (
+                            <span className="text-[9px] text-[var(--color-fz-text-muted)] shrink-0">
+                              {timeAgo(s.tracking_updated_at)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>

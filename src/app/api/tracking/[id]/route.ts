@@ -6,6 +6,9 @@ const EDITABLE_FIELDS = new Set([
   'supplier',
   'loading_status',
   'company',
+  'loading_date',
+  'eta_override',
+  'update_note',
 ]);
 
 export async function PATCH(

@@ -94,6 +94,9 @@ export interface Shipment {
   supplier: string | null;
   loading_status: string | null;
   company: string | null;
+  loading_date: string | null;
+  eta_override: string | null;
+  update_note: string | null;
   // Joined relations
   origin_contact?: Contact;
   destination_contact?: Contact;
