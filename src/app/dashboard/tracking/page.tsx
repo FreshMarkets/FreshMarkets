@@ -373,12 +373,13 @@ export default function TrackingPage() {
     return '—';
   };
 
-  const getLoadingStatus = (s: Shipment) => {
-    if (s.loading_status) return s.loading_status;
+  const getLoadingDate = (s: Shipment) => {
     const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
-    const actual = events.filter((e) => e.isActual).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    const latest = actual[0];
-    if (latest) return EVENT_CODE_LABELS[latest.eventCode] ?? latest.eventCode;
+    // Find loading event (LDND) or first departure (DEPA) or first actual event
+    const loadEvent = events.find((e) => e.isActual && e.eventCode === 'LDND')
+      ?? events.find((e) => e.isActual && e.eventCode === 'DEPA')
+      ?? events.find((e) => e.isActual && e.eventCode === 'GTOT');
+    if (loadEvent) return new Date(loadEvent.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     return '—';
   };
 
@@ -460,8 +461,9 @@ export default function TrackingPage() {
                   return (
                     <tr key={s.id} className="hover:bg-[var(--color-fz-surface-2)]/50 transition group">
                       {/* Update */}
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 overflow-hidden">
                         <div className="flex items-center gap-1">
+                          <EditableCell value={s.loading_status} shipmentId={s.id} field="loading_status" onSaved={handleCellSave} placeholder="Add note" />
                           <button
                             onClick={() => handleRefresh(s)}
                             disabled={refreshingId === s.id}
@@ -470,7 +472,6 @@ export default function TrackingPage() {
                           >
                             <RefreshCw size={11} className={refreshingId === s.id ? 'animate-spin text-[#00A082]' : ''} />
                           </button>
-                          {statusChip(s.tracking_status)}
                           <button
                             onClick={() => handleDelete(s)}
                             disabled={deletingId === s.id}
@@ -499,7 +500,7 @@ export default function TrackingPage() {
 
                       {/* Loading */}
                       <td className="px-2 py-2 truncate">
-                        {getLoadingStatus(s)}
+                        {getLoadingDate(s)}
                       </td>
 
                       {/* ETA */}
