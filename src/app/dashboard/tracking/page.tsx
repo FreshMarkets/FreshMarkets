@@ -105,15 +105,17 @@ function DateCell({
   onSaved: (id: string, field: string, val: string | null) => void;
   fallback?: string;
 }) {
+  const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const displayValue = value
-    ? new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    ? new Date(value + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     : fallback || '—';
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value || null;
     onSaved(shipmentId, field, val);
+    setOpen(false);
     try {
       await fetch(`/api/tracking/${shipmentId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -122,23 +124,28 @@ function DateCell({
     } catch { onSaved(shipmentId, field, value); }
   };
 
-  return (
-    <div className="relative">
-      <span
-        className={`cursor-pointer hover:text-[#00A082] transition text-xs block ${value ? 'font-medium' : 'text-[var(--color-fz-text-muted)]'}`}
-        onClick={() => inputRef.current?.showPicker()}
-        title="Click to pick date"
-      >
-        {displayValue}
-      </span>
+  if (open) {
+    return (
       <input
         ref={inputRef}
         type="date"
-        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+        autoFocus
+        className="w-full bg-transparent border-b border-[#00A082] outline-none text-xs py-0.5"
         value={value ?? ''}
         onChange={handleChange}
+        onBlur={() => setOpen(false)}
       />
-    </div>
+    );
+  }
+
+  return (
+    <span
+      className={`cursor-pointer hover:text-[#00A082] transition text-xs block ${value ? 'font-medium' : 'text-[var(--color-fz-text-muted)]'}`}
+      onClick={() => setOpen(true)}
+      title="Click to pick date"
+    >
+      {displayValue}
+    </span>
   );
 }
 
@@ -385,10 +392,9 @@ export default function TrackingPage() {
                   <Fragment key={s.id}>
                     {/* Main row */}
                     <tr className="hover:bg-[var(--color-fz-surface-2)]/50 transition group border-t border-[var(--color-fz-border)]">
-                      {/* Status + Actions */}
+                      {/* Actions */}
                       <td className="px-2 py-2">
                         <div className="flex items-center gap-1">
-                          {statusChip(s.tracking_status)}
                           <button onClick={() => handleRefresh(s)} disabled={refreshingId === s.id}
                             className="btn-ghost p-1 shrink-0" title="Refresh">
                             <RefreshCw size={11} className={refreshingId === s.id ? 'animate-spin text-[#00A082]' : ''} />
@@ -449,6 +455,7 @@ export default function TrackingPage() {
                     <tr className="hover:bg-[var(--color-fz-surface-2)]/50 transition">
                       <td colSpan={10} className="px-2 py-1.5">
                         <div className="flex items-center gap-2">
+                          {statusChip(s.tracking_status)}
                           <span className="text-[9px] font-semibold text-[var(--color-fz-text-muted)] uppercase shrink-0">Update:</span>
                           <div className="flex-1">
                             <EditableCell value={s.update_note} shipmentId={s.id} field="update_note" onSaved={handleCellSave} placeholder="Click to add update note..." />
