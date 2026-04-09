@@ -107,8 +107,15 @@ function DateCell({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const formatDate = (d: Date) => {
+    const day = d.getDate().toString().padStart(2, '0');
+    const mon = d.toLocaleDateString('en-GB', { month: 'short' });
+    const yr = d.getFullYear().toString().slice(-2);
+    return `${day}-${mon}-${yr}`;
+  };
+
   const displayValue = value
-    ? new Date(value + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    ? formatDate(new Date(value + 'T00:00:00'))
     : fallback || '—';
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
