@@ -429,11 +429,23 @@ export default function TrackingPage() {
       {!loading && shipments.length > 0 && (
         <div className="glass-card overflow-hidden animate-fade-in-up animate-fade-in-up-3">
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full table-fixed text-left text-[11px]">
+              <colgroup>
+                <col style={{ width: '9%' }} />  {/* Update */}
+                <col style={{ width: '8%' }} />  {/* PO */}
+                <col style={{ width: '10%' }} /> {/* Product */}
+                <col style={{ width: '10%' }} /> {/* Supplier */}
+                <col style={{ width: '8%' }} />  {/* Loading */}
+                <col style={{ width: '9%' }} />  {/* ETA */}
+                <col style={{ width: '12%' }} /> {/* Origin */}
+                <col style={{ width: '12%' }} /> {/* Destination */}
+                <col style={{ width: '13%' }} /> {/* Booking/Container */}
+                <col style={{ width: '9%' }} />  {/* Company */}
+              </colgroup>
               <thead>
                 <tr className="bg-[var(--color-fz-surface-2)] border-b border-[var(--color-fz-border)]">
-                  {['Update', 'PO', 'Product', 'Supplier', 'Loading', 'ETA', 'Origin', 'Destination', 'Booking/Container', 'Company', ''].map((h) => (
-                    <th key={h} className="px-4 py-3 text-xs font-semibold text-[var(--color-fz-text-muted)] uppercase tracking-wider whitespace-nowrap">
+                  {['Update', 'PO', 'Product', 'Supplier', 'Loading', 'ETA', 'Origin', 'Destination', 'Booking/Container', 'Company'].map((h) => (
+                    <th key={h} className="px-2 py-2.5 text-[10px] font-semibold text-[var(--color-fz-text-muted)] uppercase tracking-wider truncate">
                       {h}
                     </th>
                   ))}
@@ -442,93 +454,84 @@ export default function TrackingPage() {
               <tbody className="divide-y divide-[var(--color-fz-border)]">
                 {shipments.map((s) => {
                   const eta = s.tracking_eta
-                    ? new Date(s.tracking_eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                    ? new Date(s.tracking_eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
                     : '—';
 
                   return (
-                    <tr key={s.id} className="hover:bg-[var(--color-fz-surface-2)]/50 transition">
+                    <tr key={s.id} className="hover:bg-[var(--color-fz-surface-2)]/50 transition group">
                       {/* Update */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleRefresh(s)}
                             disabled={refreshingId === s.id}
-                            className="btn-ghost p-1.5"
-                            title="Refresh tracking"
+                            className="btn-ghost p-1 shrink-0"
+                            title="Refresh"
                           >
-                            <RefreshCw size={13} className={refreshingId === s.id ? 'animate-spin text-[#00A082]' : ''} />
+                            <RefreshCw size={11} className={refreshingId === s.id ? 'animate-spin text-[#00A082]' : ''} />
                           </button>
                           {statusChip(s.tracking_status)}
-                          {s.tracking_updated_at && (
-                            <span className="text-[9px] text-[var(--color-fz-text-muted)]">
-                              {timeAgo(s.tracking_updated_at)}
-                            </span>
-                          )}
+                          <button
+                            onClick={() => handleDelete(s)}
+                            disabled={deletingId === s.id}
+                            className="btn-ghost p-1 text-[#FF4C4C] hover:bg-[#FF4C4C]/10 opacity-0 group-hover:opacity-100 transition shrink-0"
+                            title="Delete"
+                          >
+                            <Trash2 size={11} className={deletingId === s.id ? 'animate-pulse' : ''} />
+                          </button>
                         </div>
                       </td>
 
                       {/* PO */}
-                      <td className="px-4 py-3 min-w-[100px]">
-                        <EditableCell value={s.po_number} shipmentId={s.id} field="po_number" onSaved={handleCellSave} placeholder="Add PO" mono />
+                      <td className="px-2 py-2 overflow-hidden">
+                        <EditableCell value={s.po_number} shipmentId={s.id} field="po_number" onSaved={handleCellSave} placeholder="—" mono />
                       </td>
 
                       {/* Product */}
-                      <td className="px-4 py-3 min-w-[120px]">
-                        <EditableCell value={s.product} shipmentId={s.id} field="product" onSaved={handleCellSave} placeholder="Add product" />
+                      <td className="px-2 py-2 overflow-hidden">
+                        <EditableCell value={s.product} shipmentId={s.id} field="product" onSaved={handleCellSave} placeholder="—" />
                       </td>
 
                       {/* Supplier */}
-                      <td className="px-4 py-3 min-w-[120px]">
-                        <EditableCell value={s.supplier} shipmentId={s.id} field="supplier" onSaved={handleCellSave} placeholder="Add supplier" />
+                      <td className="px-2 py-2 overflow-hidden">
+                        <EditableCell value={s.supplier} shipmentId={s.id} field="supplier" onSaved={handleCellSave} placeholder="—" />
                       </td>
 
                       {/* Loading */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs">{getLoadingStatus(s)}</span>
+                      <td className="px-2 py-2 truncate">
+                        {getLoadingStatus(s)}
                       </td>
 
                       {/* ETA */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`text-xs font-medium ${s.tracking_eta ? 'text-[#00A082]' : 'text-[var(--color-fz-text-muted)]'}`}>
+                      <td className="px-2 py-2 truncate">
+                        <span className={`font-medium ${s.tracking_eta ? 'text-[#00A082]' : 'text-[var(--color-fz-text-muted)]'}`}>
                           {eta}
                         </span>
                       </td>
 
                       {/* Origin */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs">{getOrigin(s)}</span>
+                      <td className="px-2 py-2 truncate" title={getOrigin(s)}>
+                        {getOrigin(s)}
                       </td>
 
                       {/* Destination */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-xs">{getDestination(s)}</span>
+                      <td className="px-2 py-2 truncate" title={getDestination(s)}>
+                        {getDestination(s)}
                       </td>
 
                       {/* Booking/Container */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <Link href={`/dashboard/shipments/${s.id}`} className="text-xs font-mono font-semibold hover:text-[#00A082] transition">
+                      <td className="px-2 py-2 truncate">
+                        <Link href={`/dashboard/shipments/${s.id}`} className="font-mono font-semibold hover:text-[#00A082] transition">
                           {s.container_number}
                         </Link>
                         {s.sealine_scac && (
-                          <span className="text-[10px] text-[var(--color-fz-text-muted)] ml-1.5">{s.sealine_scac}</span>
+                          <span className="text-[9px] text-[var(--color-fz-text-muted)] ml-1">{s.sealine_scac}</span>
                         )}
                       </td>
 
                       {/* Company */}
-                      <td className="px-4 py-3 min-w-[120px]">
-                        <EditableCell value={s.company} shipmentId={s.id} field="company" onSaved={handleCellSave} placeholder="Add company" />
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <button
-                          onClick={() => handleDelete(s)}
-                          disabled={deletingId === s.id}
-                          className="btn-ghost p-1.5 text-[#FF4C4C] hover:bg-[#FF4C4C]/10"
-                          title="Delete"
-                        >
-                          <Trash2 size={13} className={deletingId === s.id ? 'animate-pulse' : ''} />
-                        </button>
+                      <td className="px-2 py-2 overflow-hidden">
+                        <EditableCell value={s.company} shipmentId={s.id} field="company" onSaved={handleCellSave} placeholder="—" />
                       </td>
                     </tr>
                   );
