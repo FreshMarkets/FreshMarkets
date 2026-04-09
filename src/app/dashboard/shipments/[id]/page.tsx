@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, useRef, use } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -17,10 +17,128 @@ import {
   Download,
   Calendar,
   Hash,
+  Pencil,
+  Check,
+  Navigation,
 } from 'lucide-react';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { formatCurrency, timeAgo } from '@/lib/utils';
 import type { Shipment, SafeCubeEvent } from '@/types';
+
+// ---- Inline Editable Field ----
+
+function EditableField({
+  label, value, shipmentId, field, onSaved, mono,
+}: {
+  label: string; value: string | null; shipmentId: string; field: string;
+  onSaved: (field: string, val: string | null) => void; mono?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
+
+  const save = async () => {
+    setEditing(false);
+    const trimmed = draft.trim() || null;
+    if (trimmed === (value ?? null)) return;
+    onSaved(field, trimmed);
+    try {
+      await fetch(`/api/tracking/${shipmentId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: trimmed }),
+      });
+    } catch { onSaved(field, value); }
+  };
+
+  return (
+    <div>
+      <p className="text-[10px] text-[var(--color-fz-text-muted)] mb-1">{label}</p>
+      {editing ? (
+        <div className="flex items-center gap-1">
+          <input ref={inputRef}
+            className={`flex-1 bg-transparent border-b border-[#00A082] outline-none text-sm py-0.5 ${mono ? 'font-mono' : ''}`}
+            value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={save}
+            onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false); } }}
+          />
+          <button onClick={save} className="text-[#00A082] p-0.5"><Check size={13} /></button>
+        </div>
+      ) : (
+        <div
+          className={`flex items-center gap-1.5 cursor-pointer group/edit ${mono ? 'font-mono' : ''}`}
+          onClick={() => { setDraft(value ?? ''); setEditing(true); }}
+        >
+          <span className={`text-sm ${!value ? 'text-[var(--color-fz-text-muted)] italic' : ''}`}>
+            {value || '—'}
+          </span>
+          <Pencil size={11} className="text-[var(--color-fz-text-muted)] opacity-0 group-hover/edit:opacity-100 transition" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Date Field ----
+
+function DateField({
+  label, value, shipmentId, field, onSaved, fallback,
+}: {
+  label: string; value: string | null; shipmentId: string; field: string;
+  onSaved: (field: string, val: string | null) => void; fallback?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const formatDate = (d: Date) => {
+    const day = d.getDate().toString().padStart(2, '0');
+    const mon = d.toLocaleDateString('en-GB', { month: 'short' });
+    const yr = d.getFullYear().toString().slice(-2);
+    return `${day}-${mon}-${yr}`;
+  };
+
+  const displayValue = value
+    ? formatDate(new Date(value + 'T00:00:00'))
+    : fallback || '—';
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value || null;
+    onSaved(field, val);
+    try {
+      await fetch(`/api/tracking/${shipmentId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: val }),
+      });
+    } catch { onSaved(field, value); }
+  };
+
+  const openPicker = () => {
+    inputRef.current?.showPicker?.();
+    inputRef.current?.click();
+  };
+
+  return (
+    <div>
+      <p className="text-[10px] text-[var(--color-fz-text-muted)] mb-1">{label}</p>
+      <div className="relative">
+        <div
+          className={`flex items-center gap-1.5 cursor-pointer group/edit`}
+          onClick={openPicker}
+        >
+          <Calendar size={13} className="text-[#00A082] shrink-0" />
+          <span className={`text-sm ${value ? 'font-medium' : 'text-[var(--color-fz-text-muted)]'}`}>
+            {displayValue}
+          </span>
+          <Pencil size={11} className="text-[var(--color-fz-text-muted)] opacity-0 group-hover/edit:opacity-100 transition" />
+        </div>
+        <input
+          ref={inputRef} type="date"
+          className="absolute top-0 left-0 w-0 h-0 opacity-0 pointer-events-none"
+          tabIndex={-1} value={value ?? ''} onChange={handleChange}
+        />
+      </div>
+    </div>
+  );
+}
 
 // ---- Helpers ----
 
@@ -115,6 +233,8 @@ export default function ShipmentDetailPage({
               tracking_eta: data.tracking_eta,
               tracking_updated_at: data.tracking_updated_at,
               tracking_events: data.tracking_events,
+              loading_date: data.loading_date ?? prev.loading_date,
+              eta_override: data.eta_override ?? prev.eta_override,
             }
           : prev,
       );
@@ -144,6 +264,56 @@ export default function ShipmentDetailPage({
       </div>
     );
   }
+
+  const handleFieldSave = (field: string, val: string | null) => {
+    setShipment((prev) => prev ? { ...prev, [field]: val } : prev);
+  };
+
+  // Route autofill from tracking events
+  const getOriginFromTracking = () => {
+    const evts = Array.isArray(shipment.tracking_events) ? shipment.tracking_events : [];
+    const sorted = [...evts].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const first = sorted[0];
+    if (first?.location?.name) return { name: first.location.name, detail: first.location.country ?? '' };
+    return null;
+  };
+
+  const getDestinationFromTracking = () => {
+    const evts = Array.isArray(shipment.tracking_events) ? shipment.tracking_events : [];
+    const estimated = evts.filter((e) => !e.isActual).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const last = estimated[0];
+    if (last?.location?.name) return { name: last.location.name, detail: last.location.country ?? '' };
+    return null;
+  };
+
+  const originName = shipment.origin_contact?.name || getOriginFromTracking()?.name || '—';
+  const originDetail = shipment.origin_contact ? `${shipment.origin_contact.city}, ${shipment.origin_contact.country}` : getOriginFromTracking()?.detail || '';
+  const destName = shipment.destination_contact?.name || getDestinationFromTracking()?.name || '—';
+  const destDetail = shipment.destination_contact ? `${shipment.destination_contact.city}, ${shipment.destination_contact.country}` : getDestinationFromTracking()?.detail || '';
+
+  const getLoadingDateFallback = () => {
+    const evts = Array.isArray(shipment.tracking_events) ? shipment.tracking_events : [];
+    const loadEvent = evts.find((e) => e.isActual && e.eventCode === 'LDND')
+      ?? evts.find((e) => e.isActual && e.eventCode === 'DEPA')
+      ?? evts.find((e) => e.isActual && e.eventCode === 'GTOT');
+    if (loadEvent) return new Date(loadEvent.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return undefined;
+  };
+
+  const getEtaFallback = () => {
+    if (shipment.tracking_eta) return new Date(shipment.tracking_eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return undefined;
+  };
+
+  const getCurrentLocation = () => {
+    const evts = Array.isArray(shipment.tracking_events) ? shipment.tracking_events : [];
+    const actual = [...evts].filter((e) => e.isActual).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const latest = actual[0];
+    if (latest?.location?.name) return `${latest.location.name}${latest.location.country ? ', ' + latest.location.country : ''}`;
+    return null;
+  };
+
+  const currentLocation = getCurrentLocation();
 
   const events: SafeCubeEvent[] = Array.isArray(shipment.tracking_events)
     ? [...shipment.tracking_events].sort(
@@ -193,18 +363,14 @@ export default function ShipmentDetailPage({
             <div className="flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-[var(--color-fz-text-muted)]">Origin</p>
-                <p className="font-semibold truncate">{shipment.origin_contact?.name || '—'}</p>
-                <p className="text-xs text-[var(--color-fz-text-muted)]">
-                  {shipment.origin_contact?.city}, {shipment.origin_contact?.country}
-                </p>
+                <p className="font-semibold truncate">{originName}</p>
+                {originDetail && <p className="text-xs text-[var(--color-fz-text-muted)]">{originDetail}</p>}
               </div>
               <div className="text-[var(--color-fz-text-muted)] shrink-0">→</div>
               <div className="flex-1 min-w-0 text-right">
                 <p className="text-xs text-[var(--color-fz-text-muted)]">Destination</p>
-                <p className="font-semibold truncate">{shipment.destination_contact?.name || '—'}</p>
-                <p className="text-xs text-[var(--color-fz-text-muted)]">
-                  {shipment.destination_contact?.city}, {shipment.destination_contact?.country}
-                </p>
+                <p className="font-semibold truncate">{destName}</p>
+                {destDetail && <p className="text-xs text-[var(--color-fz-text-muted)]">{destDetail}</p>}
               </div>
             </div>
             {shipment.carrier && (
@@ -221,6 +387,11 @@ export default function ShipmentDetailPage({
               <Package size={15} className="text-[#00A082]" /> Goods
             </h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
+              {shipment.product && (
+                <div className="col-span-2 font-semibold text-[var(--color-fz-text)]">
+                  {shipment.product}
+                </div>
+              )}
               {shipment.weight_kg && (
                 <div className="flex items-center gap-2 text-[var(--color-fz-text-secondary)]">
                   <Weight size={14} className="text-[var(--color-fz-text-muted)]" />
@@ -244,6 +415,24 @@ export default function ShipmentDetailPage({
                 {shipment.special_handling}
               </p>
             )}
+          </div>
+
+          {/* Tracking Details (editable, synced with tracking table) */}
+          <div className="glass-card p-6">
+            <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
+              <FileText size={15} className="text-[#007AFF]" /> Tracking Details
+            </h3>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+              <EditableField label="PO Number" value={shipment.po_number} shipmentId={shipment.id} field="po_number" onSaved={handleFieldSave} mono />
+              <EditableField label="Product" value={shipment.product} shipmentId={shipment.id} field="product" onSaved={handleFieldSave} />
+              <EditableField label="Supplier" value={shipment.supplier} shipmentId={shipment.id} field="supplier" onSaved={handleFieldSave} />
+              <EditableField label="Company" value={shipment.company} shipmentId={shipment.id} field="company" onSaved={handleFieldSave} />
+              <DateField label="Loading Date" value={shipment.loading_date} shipmentId={shipment.id} field="loading_date" onSaved={handleFieldSave} fallback={getLoadingDateFallback()} />
+              <DateField label="ETA Override" value={shipment.eta_override} shipmentId={shipment.id} field="eta_override" onSaved={handleFieldSave} fallback={getEtaFallback()} />
+            </div>
+            <div className="mt-4 pt-4 border-t border-[var(--color-fz-border)]">
+              <EditableField label="Update Note" value={shipment.update_note} shipmentId={shipment.id} field="update_note" onSaved={handleFieldSave} />
+            </div>
           </div>
 
           {/* Meta */}

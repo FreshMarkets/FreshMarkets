@@ -166,6 +166,7 @@ interface TrackingResult {
 
 function QuickTrack({ onTracked }: { onTracked: () => void }) {
   const [containerNumber, setContainerNumber] = useState('');
+  const [shipmentType, setShipmentType] = useState<'CT' | 'BL' | 'BK'>('CT');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -179,7 +180,7 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
     try {
       const res = await fetch('/api/tracking/lookup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ container_number: num }),
+        body: JSON.stringify({ container_number: num, shipment_type: shipmentType }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Tracking lookup failed');
@@ -194,7 +195,7 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
     try {
       const res = await fetch('/api/tracking/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ container_number: num }),
+        body: JSON.stringify({ container_number: num, shipment_type: shipmentType }),
       });
       const data = await res.json();
       if (!res.ok) { if (res.status === 409) setSaved(true); else throw new Error(data.error || 'Failed to save'); }
@@ -208,9 +209,18 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
         <Search size={15} className="text-[#00A082]" /> Quick Track
       </h3>
       <div className="flex gap-3">
+        <select
+          value={shipmentType}
+          onChange={(e) => setShipmentType(e.target.value as 'CT' | 'BL' | 'BK')}
+          className="input w-auto px-3 text-sm font-medium shrink-0"
+        >
+          <option value="CT">Container</option>
+          <option value="BL">Bill of Lading</option>
+          <option value="BK">Booking</option>
+        </select>
         <div className="relative flex-1">
           <Hash size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-fz-text-muted)]" />
-          <input type="text" placeholder="Enter container, BL, or booking number..."
+          <input type="text" placeholder={shipmentType === 'CT' ? 'Enter container number...' : shipmentType === 'BL' ? 'Enter bill of lading number...' : 'Enter booking number...'}
             className="input font-mono" style={{ paddingLeft: '3.25rem' }}
             value={containerNumber} onChange={(e) => setContainerNumber(e.target.value.toUpperCase())}
             onKeyDown={(e) => e.key === 'Enter' && handleTrack()} />
@@ -298,6 +308,14 @@ export default function TrackingPage() {
 
   const handleCellSave = (id: string, field: string, val: string | null) => {
     setShipments((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: val } : s)));
+  };
+
+  const getCurrentLocation = (s: Shipment) => {
+    const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
+    const actual = [...events].filter((e) => e.isActual).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const latest = actual[0];
+    if (latest?.location?.name) return `${latest.location.name}${latest.location.country ? ', ' + latest.location.country : ''}`;
+    return null;
   };
 
   const getOrigin = (s: Shipment) => {
@@ -451,6 +469,11 @@ export default function TrackingPage() {
                       <td colSpan={10} className="px-2 py-1.5">
                         <div className="flex items-center gap-2">
                           {statusChip(s.tracking_status)}
+                          {getCurrentLocation(s) && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-[#007AFF] shrink-0">
+                              <Navigation size={9} /> {getCurrentLocation(s)}
+                            </span>
+                          )}
                           <span className="text-[9px] font-semibold text-[var(--color-fz-text-muted)] uppercase shrink-0">Update:</span>
                           <div className="flex-1">
                             <EditableCell value={s.update_note} shipmentId={s.id} field="update_note" onSaved={handleCellSave} placeholder="Click to add update note..." />

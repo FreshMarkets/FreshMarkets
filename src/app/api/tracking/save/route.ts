@@ -33,7 +33,8 @@ function normalizeEvent(ev: Record<string, unknown>) {
 
 export async function POST(request: Request) {
   try {
-    const { container_number, sealine } = await request.json();
+    const body = await request.json();
+    const { container_number, sealine } = body;
 
     if (!container_number?.trim()) {
       return Response.json(
@@ -60,9 +61,10 @@ export async function POST(request: Request) {
     }
 
     // Fetch tracking data from SafeCube
+    const shipmentType = body.shipment_type === 'BL' ? 'BL' : body.shipment_type === 'BK' ? 'BK' : 'CT';
     const tracking = await fetchContainerTracking(
       containerNum,
-      'CT',
+      shipmentType as 'CT' | 'BL' | 'BK',
       sealine || undefined,
     );
 
@@ -77,9 +79,26 @@ export async function POST(request: Request) {
       tracking.route?.pod?.estimatedDate ??
       null;
 
+    // Extract route info for autofill
+    const polLoc = tracking.route?.pol?.location;
+    const podLoc = tracking.route?.pod?.location;
+    const polName = strVal(polLoc) ?? (polLoc ? strVal((polLoc as unknown as Record<string, unknown>).name) : null);
+    const podName = strVal(podLoc) ?? (podLoc ? strVal((podLoc as unknown as Record<string, unknown>).name) : null);
+    const routeStr = [polName, podName].filter(Boolean).join(' → ');
+
+    // Extract loading date from first actual load/departure event
+    const loadEvent = rawEvents.find(
+      (e) => e.isActual && (e.eventCode === 'LDND' || e.eventCode === 'DEPA' || e.eventCode === 'GTOT'),
+    );
+    const loadingDate = loadEvent ? loadEvent.date.slice(0, 10) : null;
+
+    // ETA as date only
+    const etaDate = trackingEta ? trackingEta.slice(0, 10) : null;
+
     // Create shipment record
     const reference = generateReference();
-    const description = `Container ${containerNum}${tracking.vessels?.[0]?.name ? ` · ${typeof tracking.vessels[0].name === 'string' ? tracking.vessels[0].name : ''}` : ''}`;
+    const vesselName = typeof tracking.vessels?.[0]?.name === 'string' ? tracking.vessels[0].name : strVal(tracking.vessels?.[0]?.name);
+    const description = `Container ${containerNum}${vesselName ? ` · ${vesselName}` : ''}${routeStr ? ` — ${routeStr}` : ''}`;
 
     const { data: shipment, error: insertError } = await supabase
       .from('shipments')
@@ -88,11 +107,13 @@ export async function POST(request: Request) {
         description,
         status: 'confirmed',
         container_number: containerNum,
-        sealine_scac: sealine || null,
+        sealine_scac: sealine || tracking.metadata?.sealine || null,
         tracking_status: trackingStatus,
         tracking_eta: trackingEta,
         tracking_updated_at: new Date().toISOString(),
         tracking_events: trackingEvents,
+        loading_date: loadingDate,
+        eta_override: etaDate,
         created_by: 'system',
       })
       .select()

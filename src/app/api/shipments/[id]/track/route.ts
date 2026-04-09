@@ -37,7 +37,7 @@ export async function POST(
     // Fetch shipment
     const { data: shipment, error: fetchError } = await supabase
       .from('shipments')
-      .select('id, reference, container_number, sealine_scac')
+      .select('id, reference, container_number, sealine_scac, loading_date, eta_override')
       .eq('id', id)
       .single();
 
@@ -68,15 +68,27 @@ export async function POST(
     const rawEvents = tracking.containers?.flatMap((c) => c.events ?? []) ?? [];
     const trackingEvents = rawEvents.map((ev) => normalizeEvent(ev as unknown as Record<string, unknown>));
 
+    // Autofill loading_date from first actual load event (only if not manually set)
+    const loadEvent = rawEvents.find(
+      (e) => e.isActual && (e.eventCode === 'LDND' || e.eventCode === 'DEPA' || e.eventCode === 'GTOT'),
+    );
+    const autoLoadingDate = loadEvent ? loadEvent.date.slice(0, 10) : null;
+    const autoEtaDate = trackingEta ? trackingEta.slice(0, 10) : null;
+
     // Persist to DB
+    const updates: Record<string, unknown> = {
+      tracking_status: trackingStatus,
+      tracking_eta: trackingEta,
+      tracking_updated_at: new Date().toISOString(),
+      tracking_events: trackingEvents,
+    };
+    // Only autofill dates if not manually overridden
+    if (!shipment.loading_date && autoLoadingDate) updates.loading_date = autoLoadingDate;
+    if (!shipment.eta_override && autoEtaDate) updates.eta_override = autoEtaDate;
+
     const { error: updateError } = await supabase
       .from('shipments')
-      .update({
-        tracking_status: trackingStatus,
-        tracking_eta: trackingEta,
-        tracking_updated_at: new Date().toISOString(),
-        tracking_events: trackingEvents,
-      })
+      .update(updates)
       .eq('id', id);
 
     if (updateError) {
@@ -102,6 +114,8 @@ export async function POST(
       tracking_eta: trackingEta,
       tracking_updated_at: new Date().toISOString(),
       tracking_events: trackingEvents,
+      loading_date: (updates.loading_date as string) ?? shipment.loading_date,
+      eta_override: (updates.eta_override as string) ?? shipment.eta_override,
       vessels: tracking.vessels ?? [],
       route: tracking.route ?? null,
     });

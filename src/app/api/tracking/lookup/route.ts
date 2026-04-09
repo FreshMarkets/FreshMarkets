@@ -45,7 +45,7 @@ function normalizeEvent(ev: Record<string, unknown>) {
 
 export async function POST(request: Request) {
   try {
-    const { container_number, sealine } = await request.json();
+    const { container_number, sealine, shipment_type } = await request.json();
 
     if (!container_number?.trim()) {
       return Response.json(
@@ -54,9 +54,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const type = shipment_type === 'BL' ? 'BL' : shipment_type === 'BK' ? 'BK' : 'CT';
     const data = await fetchContainerTracking(
       container_number.trim().toUpperCase(),
-      'CT',
+      type as 'CT' | 'BL' | 'BK',
       sealine || undefined,
     );
 
