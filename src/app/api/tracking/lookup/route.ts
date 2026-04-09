@@ -69,10 +69,11 @@ export async function POST(request: Request) {
     const podLoc = data.route?.pod?.location;
 
     // Find the latest actual event to determine current location
-    const actualEvents = events
+    const actualRaw = rawEvents
       .filter((e) => e.isActual)
-      .sort((a, b) => new Date(b.date as string).getTime() - new Date(a.date as string).getTime());
-    const currentEvent = actualEvents[0] ?? null;
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const currentRaw = actualRaw[0] ?? null;
+    const currentEvent = currentRaw ? normalizeEvent(currentRaw as unknown as Record<string, unknown>) : null;
 
     return Response.json({
       status: data.metadata.shippingStatus,
@@ -86,12 +87,12 @@ export async function POST(request: Request) {
         pod: locName(podLoc) ?? (podLoc ? locName((podLoc as unknown as Record<string, unknown>).name) : null),
         pod_country: podLoc ? locCountry(podLoc as unknown as Record<string, unknown>) : null,
       },
-      current_location: currentEvent?.location
+      current_location: currentRaw
         ? {
-            name: (currentEvent.location as { name: string | null }).name,
-            country: (currentEvent.location as { country: string | null }).country,
-            event: currentEvent.eventCode,
-            date: currentEvent.date,
+            name: currentEvent?.location ? (currentEvent.location as { name: string | null }).name : null,
+            country: currentEvent?.location ? (currentEvent.location as { country: string | null }).country : null,
+            event: currentRaw.eventCode,
+            date: currentRaw.date,
           }
         : null,
     });
