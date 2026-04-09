@@ -105,7 +105,6 @@ function DateCell({
   onSaved: (id: string, field: string, val: string | null) => void;
   fallback?: string;
 }) {
-  const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const displayValue = value
@@ -115,7 +114,6 @@ function DateCell({
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value || null;
     onSaved(shipmentId, field, val);
-    setOpen(false);
     try {
       await fetch(`/api/tracking/${shipmentId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -124,28 +122,29 @@ function DateCell({
     } catch { onSaved(shipmentId, field, value); }
   };
 
-  if (open) {
-    return (
+  const openPicker = () => {
+    inputRef.current?.showPicker?.();
+    inputRef.current?.click();
+  };
+
+  return (
+    <div className="relative inline-block">
+      <span
+        className={`cursor-pointer hover:text-[#00A082] transition text-xs block ${value ? 'font-medium' : 'text-[var(--color-fz-text-muted)]'}`}
+        onClick={openPicker}
+        title="Click to pick date"
+      >
+        {displayValue}
+      </span>
       <input
         ref={inputRef}
         type="date"
-        autoFocus
-        className="w-full bg-transparent border-b border-[#00A082] outline-none text-xs py-0.5"
+        className="absolute top-0 left-0 w-0 h-0 opacity-0 pointer-events-none"
+        tabIndex={-1}
         value={value ?? ''}
         onChange={handleChange}
-        onBlur={() => setOpen(false)}
       />
-    );
-  }
-
-  return (
-    <span
-      className={`cursor-pointer hover:text-[#00A082] transition text-xs block ${value ? 'font-medium' : 'text-[var(--color-fz-text-muted)]'}`}
-      onClick={() => setOpen(true)}
-      title="Click to pick date"
-    >
-      {displayValue}
-    </span>
+    </div>
   );
 }
 
@@ -392,19 +391,8 @@ export default function TrackingPage() {
                   <Fragment key={s.id}>
                     {/* Main row */}
                     <tr className="hover:bg-[var(--color-fz-surface-2)]/50 transition group border-t border-[var(--color-fz-border)]">
-                      {/* Actions */}
-                      <td className="px-2 py-2">
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => handleRefresh(s)} disabled={refreshingId === s.id}
-                            className="btn-ghost p-1 shrink-0" title="Refresh">
-                            <RefreshCw size={11} className={refreshingId === s.id ? 'animate-spin text-[#00A082]' : ''} />
-                          </button>
-                          <button onClick={() => handleDelete(s)} disabled={deletingId === s.id}
-                            className="btn-ghost p-1 text-[#FF4C4C] hover:bg-[#FF4C4C]/10 opacity-0 group-hover:opacity-100 transition shrink-0" title="Delete">
-                            <Trash2 size={11} className={deletingId === s.id ? 'animate-pulse' : ''} />
-                          </button>
-                        </div>
-                      </td>
+                      {/* Spacer (first col) */}
+                      <td className="px-2 py-2" />
 
                       {/* PO */}
                       <td className="px-2 py-2 overflow-hidden">
@@ -465,6 +453,14 @@ export default function TrackingPage() {
                               {timeAgo(s.tracking_updated_at)}
                             </span>
                           )}
+                          <button onClick={() => handleRefresh(s)} disabled={refreshingId === s.id}
+                            className="btn-ghost p-1 shrink-0" title="Refresh tracking">
+                            <RefreshCw size={11} className={refreshingId === s.id ? 'animate-spin text-[#00A082]' : ''} />
+                          </button>
+                          <button onClick={() => handleDelete(s)} disabled={deletingId === s.id}
+                            className="btn-ghost p-1 text-[#FF4C4C] hover:bg-[#FF4C4C]/10 shrink-0" title="Delete">
+                            <Trash2 size={11} className={deletingId === s.id ? 'animate-pulse' : ''} />
+                          </button>
                         </div>
                       </td>
                     </tr>
