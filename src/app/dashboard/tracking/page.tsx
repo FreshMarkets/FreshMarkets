@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Package,
   Hash,
+  Trash2,
+  Navigation,
 } from 'lucide-react';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { timeAgo } from '@/lib/utils';
@@ -59,18 +61,32 @@ function trackingStatusIcon(status: string | null) {
 
 // ---- Quick-Track Section ----
 
+interface TrackingResult {
+  status: string;
+  sealine: string | null;
+  eta: string | null;
+  events: SafeCubeEvent[];
+  vessel: string | null;
+  route: {
+    pol: string | null;
+    pol_country: string | null;
+    pod: string | null;
+    pod_country: string | null;
+  };
+  current_location: {
+    name: string | null;
+    country: string | null;
+    event: string;
+    date: string;
+  } | null;
+}
+
 function QuickTrack({ onTracked }: { onTracked: () => void }) {
   const [containerNumber, setContainerNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [result, setResult] = useState<{
-    status: string;
-    eta: string | null;
-    events: SafeCubeEvent[];
-    vessel: string | null;
-    route: { pol: string | null; pod: string | null };
-  } | null>(null);
+  const [result, setResult] = useState<TrackingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleTrack = async () => {
@@ -175,7 +191,7 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
 
       {result && (
         <div className="space-y-4 animate-fade-in-up animate-fade-in-up-1">
-          {/* Status header */}
+          {/* Status + Save */}
           <div className="flex items-center gap-4 flex-wrap">
             <span
               className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${trackingStatusColor(result.status)}`}
@@ -196,12 +212,6 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
                 </strong>
               </div>
             )}
-            {result.vessel && (
-              <div className="flex items-center gap-1.5 text-sm text-[var(--color-fz-text-muted)]">
-                <Anchor size={14} /> {result.vessel}
-              </div>
-            )}
-            {/* Save button */}
             {!saved ? (
               <button
                 onClick={handleSave}
@@ -222,20 +232,61 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
             )}
           </div>
 
-          {/* Route */}
-          {(result.route.pol || result.route.pod) && (
-            <div className="flex items-center gap-3 text-sm">
-              <div className="flex items-center gap-1.5">
-                <MapPin size={14} className="text-[var(--color-fz-text-muted)]" />
-                <span>{result.route.pol || '—'}</span>
+          {/* Info cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Vessel */}
+            {result.vessel && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-[var(--color-fz-surface-2)] border border-[var(--color-fz-border)]">
+                <Anchor size={16} className="text-[#00A082] shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] text-[var(--color-fz-text-muted)] uppercase">Vessel</p>
+                  <p className="text-sm font-medium truncate">{result.vessel}</p>
+                  {result.sealine && (
+                    <p className="text-[10px] text-[var(--color-fz-text-muted)]">{result.sealine}</p>
+                  )}
+                </div>
               </div>
-              <ArrowRight size={14} className="text-[var(--color-fz-text-muted)]" />
-              <div className="flex items-center gap-1.5">
-                <MapPin size={14} className="text-[#00A082]" />
-                <span>{result.route.pod || '—'}</span>
+            )}
+
+            {/* Route */}
+            {(result.route.pol || result.route.pod) && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-[var(--color-fz-surface-2)] border border-[var(--color-fz-border)]">
+                <MapPin size={16} className="text-[#FF9500] shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] text-[var(--color-fz-text-muted)] uppercase">Route</p>
+                  <p className="text-sm font-medium truncate">
+                    {result.route.pol ?? '—'}
+                    {result.route.pol_country ? ` (${result.route.pol_country})` : ''}
+                    {' → '}
+                    {result.route.pod ?? '—'}
+                    {result.route.pod_country ? ` (${result.route.pod_country})` : ''}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* Current Location */}
+            {result.current_location && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-[var(--color-fz-surface-2)] border border-[var(--color-fz-border)]">
+                <Navigation size={16} className="text-[#007AFF] shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] text-[var(--color-fz-text-muted)] uppercase">Current Location</p>
+                  <p className="text-sm font-medium truncate">
+                    {result.current_location.name ?? 'Unknown'}
+                    {result.current_location.country ? `, ${result.current_location.country}` : ''}
+                  </p>
+                  <p className="text-[10px] text-[var(--color-fz-text-muted)]">
+                    {EVENT_CODE_LABELS[result.current_location.event] ?? result.current_location.event}
+                    {' · '}
+                    {new Date(result.current_location.date).toLocaleDateString('en-GB', {
+                      day: 'numeric',
+                      month: 'short',
+                    })}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Events timeline */}
           {events.length > 0 && (
@@ -303,6 +354,7 @@ export default function TrackingPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -324,7 +376,6 @@ export default function TrackingPage() {
       });
   }, []);
 
-  // Auto-refresh: call refresh-all endpoint every 5 minutes
   const autoRefreshAll = useCallback(async () => {
     setAutoRefreshing(true);
     try {
@@ -338,7 +389,6 @@ export default function TrackingPage() {
 
   useEffect(() => {
     fetchTrackedShipments();
-    // Start auto-refresh interval
     intervalRef.current = setInterval(autoRefreshAll, AUTO_REFRESH_INTERVAL);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -369,6 +419,23 @@ export default function TrackingPage() {
       }
     } finally {
       setRefreshingId(null);
+    }
+  };
+
+  const handleDelete = async (shipment: Shipment) => {
+    if (!confirm(`Remove tracking for ${shipment.container_number}? This will delete the shipment record.`)) {
+      return;
+    }
+    setDeletingId(shipment.id);
+    try {
+      const res = await fetch(`/api/tracking/${shipment.id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setShipments((prev) => prev.filter((s) => s.id !== shipment.id));
+      }
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -449,6 +516,7 @@ export default function TrackingPage() {
                 )
               : [];
             const latestEvent = events[0] ?? null;
+            const latestActual = events.find((e) => e.isActual) ?? null;
 
             return (
               <div key={shipment.id} className="glass-card p-5">
@@ -485,31 +553,32 @@ export default function TrackingPage() {
                     </div>
                   </div>
 
-                  {/* Middle: Route */}
-                  <div className="flex items-center gap-2 text-sm text-[var(--color-fz-text-secondary)] shrink-0">
-                    <div className="flex items-center gap-1.5">
-                      <MapPin
-                        size={14}
-                        className="text-[var(--color-fz-text-muted)]"
-                      />
-                      <span>
-                        {shipment.origin_contact?.city || '—'}
-                      </span>
+                  {/* Middle: Route + Current Location */}
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <div className="flex items-center gap-2 text-sm text-[var(--color-fz-text-secondary)]">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={14} className="text-[var(--color-fz-text-muted)]" />
+                        <span>{shipment.origin_contact?.city || '—'}</span>
+                      </div>
+                      <ArrowRight size={14} className="text-[var(--color-fz-text-muted)]" />
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={14} className="text-[#00A082]" />
+                        <span>{shipment.destination_contact?.city || '—'}</span>
+                      </div>
                     </div>
-                    <ArrowRight
-                      size={14}
-                      className="text-[var(--color-fz-text-muted)]"
-                    />
-                    <div className="flex items-center gap-1.5">
-                      <MapPin size={14} className="text-[#00A082]" />
-                      <span>
-                        {shipment.destination_contact?.city || '—'}
-                      </span>
-                    </div>
+                    {latestActual?.location?.name && (
+                      <div className="flex items-center gap-1.5 text-xs text-[#007AFF]">
+                        <Navigation size={12} />
+                        <span>
+                          Now: {latestActual.location.name}
+                          {latestActual.location.country ? `, ${latestActual.location.country}` : ''}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Right: ETA + actions */}
-                  <div className="flex items-center gap-4 shrink-0">
+                  <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right">
                       {shipment.tracking_eta && (
                         <p className="text-xs font-medium text-[#00A082]">
@@ -555,10 +624,21 @@ export default function TrackingPage() {
                     >
                       <Package size={14} />
                     </Link>
+                    <button
+                      onClick={() => handleDelete(shipment)}
+                      disabled={deletingId === shipment.id}
+                      className="btn-ghost p-2 text-[#FF4C4C] hover:bg-[#FF4C4C]/10"
+                      title="Delete tracking"
+                    >
+                      <Trash2
+                        size={14}
+                        className={deletingId === shipment.id ? 'animate-pulse' : ''}
+                      />
+                    </button>
                   </div>
                 </div>
 
-                {/* Compact timeline — last 3 events */}
+                {/* Compact timeline — last 4 events */}
                 {events.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-[var(--color-fz-border)] flex items-center gap-4 overflow-x-auto">
                     {events.slice(0, 4).map((ev, i) => (
