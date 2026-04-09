@@ -212,16 +212,16 @@ function QuickTrack({ onTracked }: { onTracked: () => void }) {
         <select
           value={shipmentType}
           onChange={(e) => setShipmentType(e.target.value as 'CT' | 'BL' | 'BK')}
-          className="input w-auto px-3 text-sm font-medium shrink-0"
+          className="px-3 py-2.5 rounded-xl border border-[var(--color-fz-border)] bg-[var(--color-fz-surface)] text-sm font-medium shrink-0"
         >
           <option value="CT">Container</option>
           <option value="BL">Bill of Lading</option>
           <option value="BK">Booking</option>
         </select>
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Hash size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-fz-text-muted)]" />
-          <input type="text" placeholder={shipmentType === 'CT' ? 'Enter container number...' : shipmentType === 'BL' ? 'Enter bill of lading number...' : 'Enter booking number...'}
-            className="input font-mono" style={{ paddingLeft: '3.25rem' }}
+          <input type="text" placeholder={shipmentType === 'CT' ? 'Enter container number...' : shipmentType === 'BL' ? 'Enter BL number...' : 'Enter booking number...'}
+            className="input font-mono w-full" style={{ paddingLeft: '3.25rem' }}
             value={containerNumber} onChange={(e) => setContainerNumber(e.target.value.toUpperCase())}
             onKeyDown={(e) => e.key === 'Enter' && handleTrack()} />
         </div>

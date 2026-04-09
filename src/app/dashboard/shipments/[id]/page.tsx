@@ -187,6 +187,90 @@ const EVENT_CODE_LABELS: Record<string, string> = {
   RMVD: 'Removed',
 };
 
+// ---- Track Input (enter container/BL/booking to start tracking) ----
+
+function TrackInput({ shipmentId, currentNumber, onTracked }: { shipmentId: string; currentNumber?: string | null; onTracked: (data: Partial<Shipment>) => void }) {
+  const [editing, setEditing] = useState(!currentNumber);
+  const [number, setNumber] = useState(currentNumber ?? '');
+  const [type, setType] = useState<'CT' | 'BL' | 'BK'>('CT');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleTrack = async () => {
+    const num = number.trim().toUpperCase();
+    if (!num) return;
+    setLoading(true); setError(null);
+    try {
+      const supabase = createBrowserSupabaseClient();
+      await supabase.from('shipments').update({ container_number: num }).eq('id', shipmentId);
+
+      const res = await fetch(`/api/shipments/${shipmentId}/track`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Tracking failed');
+      setEditing(false);
+      onTracked({
+        container_number: num,
+        tracking_status: data.tracking_status,
+        tracking_eta: data.tracking_eta,
+        tracking_updated_at: data.tracking_updated_at,
+        tracking_events: data.tracking_events,
+        loading_date: data.loading_date,
+        eta_override: data.eta_override,
+      });
+    } catch (err) { setError(String(err)); } finally { setLoading(false); }
+  };
+
+  if (!editing && currentNumber) {
+    return (
+      <div className="flex items-center gap-2 mb-4 p-2 rounded-lg bg-[var(--color-fz-surface-2)]">
+        <Hash size={13} className="text-[var(--color-fz-text-muted)] shrink-0" />
+        <span className="font-mono text-sm font-semibold flex-1 truncate">{currentNumber}</span>
+        <button onClick={() => { setNumber(currentNumber); setEditing(true); }} className="btn-ghost text-[10px] py-0.5 px-2 shrink-0">
+          <Pencil size={11} /> Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 mb-4">
+      <div className="flex gap-2">
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value as 'CT' | 'BL' | 'BK')}
+          className="input w-auto px-2 text-xs font-medium shrink-0"
+        >
+          <option value="CT">Container</option>
+          <option value="BL">Bill of Lading</option>
+          <option value="BK">Booking</option>
+        </select>
+        <div className="relative flex-1">
+          <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-fz-text-muted)]" />
+          <input
+            type="text"
+            placeholder={type === 'CT' ? 'Container number...' : type === 'BL' ? 'BL number...' : 'Booking number...'}
+            className="input font-mono text-sm w-full"
+            style={{ paddingLeft: '2.25rem' }}
+            value={number}
+            onChange={(e) => setNumber(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === 'Enter' && handleTrack()}
+          />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={handleTrack} disabled={loading || !number.trim()} className="btn-primary flex-1 text-sm">
+          {loading ? <RefreshCw size={14} className="animate-spin" /> : <Ship size={14} />}
+          {loading ? 'Tracking...' : 'Start Tracking'}
+        </button>
+        {currentNumber && (
+          <button onClick={() => setEditing(false)} className="btn-ghost text-xs px-3">Cancel</button>
+        )}
+      </div>
+      {error && <p className="text-xs text-[#D93636] bg-[#FF4C4C]/10 rounded-lg px-3 py-2">{error}</p>}
+    </div>
+  );
+}
+
 // ---- Main page ----
 
 export default function ShipmentDetailPage({
@@ -335,6 +419,11 @@ export default function ShipmentDetailPage({
               {shipment.status.replace('_', ' ')}
             </span>
             {trackingStatusChip(shipment.tracking_status)}
+            {currentLocation && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-[#007AFF]">
+                <Navigation size={11} /> {currentLocation}
+              </span>
+            )}
           </div>
           <p className="text-sm text-[var(--color-fz-text-muted)] mt-0.5 truncate">
             {shipment.description}
@@ -470,15 +559,14 @@ export default function ShipmentDetailPage({
               )}
             </div>
 
-            {!shipment.container_number ? (
-              <div className="text-center py-8 text-[var(--color-fz-text-muted)]">
-                <Ship size={32} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm">No container number set.</p>
-                <p className="text-xs mt-1 opacity-70">
-                  Add a container / BL / BK number when creating a shipment to enable live tracking.
-                </p>
-              </div>
-            ) : (
+            {/* Track input — always visible */}
+            <TrackInput
+              shipmentId={shipment.id}
+              currentNumber={shipment.container_number}
+              onTracked={(updated) => setShipment((prev) => prev ? { ...prev, ...updated } : prev)}
+            />
+
+            {shipment.container_number ? (
               <div className="space-y-4">
                 {/* Status + ETA */}
                 <div className="space-y-2">
@@ -570,7 +658,7 @@ export default function ShipmentDetailPage({
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
