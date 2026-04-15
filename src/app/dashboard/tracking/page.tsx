@@ -418,18 +418,13 @@ export default function TrackingPage() {
     return '—';
   };
 
-  const getLoadingDateFallback = (s: Shipment) => {
+  const getLoadingDateISO = (s: Shipment): string | null => {
     const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
     const loadEvent = events.find((e) => e.isActual && e.eventCode === 'LDND')
       ?? events.find((e) => e.isActual && e.eventCode === 'DEPA')
       ?? events.find((e) => e.isActual && e.eventCode === 'GTOT');
-    if (loadEvent) return new Date(loadEvent.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    return '—';
-  };
-
-  const getEtaFallback = (s: Shipment) => {
-    if (s.tracking_eta) return new Date(s.tracking_eta).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    return '—';
+    if (loadEvent) return loadEvent.date.slice(0, 10);
+    return null;
   };
 
   return (
@@ -518,14 +513,14 @@ export default function TrackingPage() {
                         <EditableCell value={s.supplier} shipmentId={s.id} field="supplier" onSaved={handleCellSave} placeholder="—" />
                       </td>
 
-                      {/* Loading (date picker) */}
+                      {/* Loading (date picker) — show loading_date, or fall back to first load event */}
                       <td className="px-2 py-2">
-                        <DateCell value={s.loading_date} shipmentId={s.id} field="loading_date" onSaved={handleCellSave} fallback={getLoadingDateFallback(s)} />
+                        <DateCell value={s.loading_date ?? getLoadingDateISO(s)} shipmentId={s.id} field="loading_date" onSaved={handleCellSave} />
                       </td>
 
-                      {/* ETA (date picker) */}
+                      {/* ETA (date picker) — show eta_override, or fall back to tracking_eta */}
                       <td className="px-2 py-2">
-                        <DateCell value={s.eta_override} shipmentId={s.id} field="eta_override" onSaved={handleCellSave} fallback={getEtaFallback(s)} />
+                        <DateCell value={s.eta_override ?? (s.tracking_eta ? s.tracking_eta.slice(0, 10) : null)} shipmentId={s.id} field="eta_override" onSaved={handleCellSave} />
                       </td>
 
                       {/* Origin */}
