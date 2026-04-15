@@ -16,6 +16,7 @@ import {
   Hash,
   Trash2,
   Navigation,
+  Plus,
 } from 'lucide-react';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { timeAgo } from '@/lib/utils';
@@ -351,8 +352,8 @@ export default function TrackingPage() {
       .from('shipments')
       .select(`*, origin_contact:contacts!origin_contact_id(name, city, country),
                    destination_contact:contacts!destination_contact_id(name, city, country)`)
-      .not('container_number', 'is', null)
-      .order('tracking_updated_at', { ascending: false, nullsFirst: false })
+      .or('container_number.not.is.null,loading_status.not.is.null')
+      .order('created_at', { ascending: false })
       .then(({ data }) => { if (data) setShipments(data as Shipment[]); setLoading(false); });
   }, []);
 
@@ -390,6 +391,17 @@ export default function TrackingPage() {
 
   const handleCellSave = (id: string, field: string, val: string | null) => {
     setShipments((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: val } : s)));
+  };
+
+  const handleAddBlank = async () => {
+    try {
+      const res = await fetch('/api/tracking/create-blank', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok) setShipments((prev) => [data as Shipment, ...prev]);
+    } catch { /* ignore */ }
   };
 
   const getCurrentLocation = (s: Shipment) => {
@@ -450,9 +462,12 @@ export default function TrackingPage() {
             {autoRefreshing && <span className="ml-2 text-xs text-[#00A082]"><RefreshCw size={10} className="inline animate-spin mr-1" />Auto-refreshing...</span>}
           </p>
         </div>
-        {shipments.length > 0 && (
-          <button onClick={handleRefreshAll} className="btn-secondary"><RefreshCw size={16} /> Refresh All</button>
-        )}
+        <div className="flex gap-2">
+          <button onClick={handleAddBlank} className="btn-primary"><Plus size={16} /> Add Row</button>
+          {shipments.length > 0 && (
+            <button onClick={handleRefreshAll} className="btn-secondary"><RefreshCw size={16} /> Refresh All</button>
+          )}
+        </div>
       </div>
 
       {/* Quick Track */}
