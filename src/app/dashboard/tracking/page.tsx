@@ -427,6 +427,18 @@ export default function TrackingPage() {
     return null;
   };
 
+  const getEtaISO = (s: Shipment): string | null => {
+    // 1. eta_override (manually set)
+    if (s.eta_override) return s.eta_override;
+    // 2. tracking_eta from API
+    if (s.tracking_eta) return s.tracking_eta.slice(0, 10);
+    // 3. Derive from last estimated event
+    const events = Array.isArray(s.tracking_events) ? s.tracking_events : [];
+    const estimated = events.filter((e) => !e.isActual).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    if (estimated[0]?.date) return estimated[0].date.slice(0, 10);
+    return null;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -518,9 +530,9 @@ export default function TrackingPage() {
                         <DateCell value={s.loading_date ?? getLoadingDateISO(s)} shipmentId={s.id} field="loading_date" onSaved={handleCellSave} />
                       </td>
 
-                      {/* ETA (date picker) — show eta_override, or fall back to tracking_eta */}
+                      {/* ETA (date picker) */}
                       <td className="px-2 py-2">
-                        <DateCell value={s.eta_override ?? (s.tracking_eta ? s.tracking_eta.slice(0, 10) : null)} shipmentId={s.id} field="eta_override" onSaved={handleCellSave} />
+                        <DateCell value={getEtaISO(s)} shipmentId={s.id} field="eta_override" onSaved={handleCellSave} />
                       </td>
 
                       {/* Origin */}
