@@ -35,6 +35,88 @@ const EVENT_CODE_LABELS: Record<string, string> = {
   RMVD: 'Removed',
 };
 
+// ---- Row status (color coding) ----
+
+type RowStatus = 'in_transit' | 'in_production' | 'not_started';
+
+const ROW_STATUS_OPTIONS: { value: RowStatus; label: string; color: string; bg: string; borderL: string }[] = [
+  { value: 'in_transit',    label: 'In Transit',      color: 'text-emerald-700', bg: 'bg-emerald-500/8',  borderL: 'border-l-emerald-500' },
+  { value: 'in_production', label: 'In Production',   color: 'text-amber-700',   bg: 'bg-amber-400/8',    borderL: 'border-l-amber-400' },
+  { value: 'not_started',   label: 'Not Started',     color: 'text-red-600',     bg: 'bg-red-500/8',      borderL: 'border-l-red-500' },
+];
+
+function getRowStatus(s: Shipment): RowStatus {
+  if (s.loading_status === 'in_production' || s.loading_status === 'in_transit' || s.loading_status === 'not_started') {
+    return s.loading_status as RowStatus;
+  }
+  // Auto-detect from tracking data
+  if (s.tracking_status === 'IN_TRANSIT' || s.tracking_status === 'DELIVERED' || s.container_number) return 'in_transit';
+  return 'not_started';
+}
+
+function getRowColors(status: RowStatus) {
+  return ROW_STATUS_OPTIONS.find((o) => o.value === status) ?? ROW_STATUS_OPTIONS[2];
+}
+
+function RowStatusDot({ shipment, onSaved }: { shipment: Shipment; onSaved: (id: string, field: string, val: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const status = getRowStatus(shipment);
+  const colors = getRowColors(status);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const handleSelect = async (val: RowStatus) => {
+    setOpen(false);
+    onSaved(shipment.id, 'loading_status', val);
+    try {
+      await fetch(`/api/tracking/${shipment.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loading_status: val }),
+      });
+    } catch { onSaved(shipment.id, 'loading_status', shipment.loading_status); }
+  };
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`w-3 h-3 rounded-full border-2 cursor-pointer transition hover:scale-125 ${
+          status === 'in_transit' ? 'bg-emerald-500 border-emerald-600' :
+          status === 'in_production' ? 'bg-amber-400 border-amber-500' :
+          'bg-red-500 border-red-600'
+        }`}
+        title={colors.label}
+      />
+      {open && (
+        <div className="absolute left-0 top-5 z-50 bg-[var(--color-fz-surface)] border border-[var(--color-fz-border)] rounded-lg shadow-lg py-1 w-36 animate-fade-in-up">
+          {ROW_STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => handleSelect(opt.value)}
+              className={`w-full text-left px-3 py-1.5 text-[11px] flex items-center gap-2 hover:bg-[var(--color-fz-surface-2)] transition ${
+                opt.value === status ? 'font-semibold' : ''
+              }`}
+            >
+              <span className={`w-2.5 h-2.5 rounded-full ${
+                opt.value === 'in_transit' ? 'bg-emerald-500' :
+                opt.value === 'in_production' ? 'bg-amber-400' :
+                'bg-red-500'
+              }`} />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function statusChip(status: string | null) {
   let cls = 'text-[var(--color-fz-text-muted)] bg-[var(--color-fz-surface-2)]';
   if (status === 'IN_TRANSIT') cls = 'text-[#00A082] bg-[#00A082]/10';
@@ -404,7 +486,7 @@ export default function TrackingPage() {
               </colgroup>
               <thead>
                 <tr className="bg-[var(--color-fz-surface-2)] border-b border-[var(--color-fz-border)]">
-                  {['', 'PO', 'Product', 'Supplier', 'Loading', 'ETA', 'Origin', 'Destination', 'Booking/Container', 'Company'].map((h, i) => (
+                  {['Status', 'PO', 'Product', 'Supplier', 'Loading', 'ETA', 'Origin', 'Destination', 'Booking/Container', 'Company'].map((h, i) => (
                     <th key={i} className="px-2 py-2.5 text-[10px] font-semibold text-[var(--color-fz-text-muted)] uppercase tracking-wider truncate">
                       {h}
                     </th>
@@ -415,9 +497,11 @@ export default function TrackingPage() {
                 {shipments.map((s) => (
                   <Fragment key={s.id}>
                     {/* Main row */}
-                    <tr className="hover:bg-[var(--color-fz-surface-2)]/50 transition group border-t border-[var(--color-fz-border)]">
-                      {/* Spacer (first col) */}
-                      <td className="px-2 py-2" />
+                    <tr className={`transition group border-t border-[var(--color-fz-border)] border-l-[3px] ${getRowColors(getRowStatus(s)).borderL} ${getRowColors(getRowStatus(s)).bg}`}>
+                      {/* Status dot */}
+                      <td className="px-2 py-2 text-center">
+                        <RowStatusDot shipment={s} onSaved={handleCellSave} />
+                      </td>
 
                       {/* PO */}
                       <td className="px-2 py-2 overflow-hidden">
@@ -465,7 +549,7 @@ export default function TrackingPage() {
                     </tr>
 
                     {/* Update note row */}
-                    <tr className="hover:bg-[var(--color-fz-surface-2)]/50 transition">
+                    <tr className={`transition border-l-[3px] ${getRowColors(getRowStatus(s)).borderL} ${getRowColors(getRowStatus(s)).bg}`}>
                       <td colSpan={10} className="px-2 py-1.5">
                         <div className="flex items-center gap-2">
                           {statusChip(s.tracking_status)}
